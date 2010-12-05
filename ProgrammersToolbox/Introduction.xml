@@ -1,0 +1,34 @@
+<preface>
+<title>Introduction</title>
+
+<para>
+How many programming languages do you know?  Are they all basically the same,
+with just different rules about where to place colons, parenthesis, and 
+brackets?  Most popular languages today are basically C++ with variations.
+C++ is great for some things, but when every popular language follows the
+same basic paradigms many programmers don't even know that alternatives exist.
+</para>
+
+<para>
+A programmer's greatest tool is his programming language.  However, most
+programmers do not make enough use of this tool.  Many programmers learn
+only enough of their programming language to do basic tasks and call libraries
+to do the rest.  This often leaves the true expressive power of their chosen 
+programming language untapped, wasting hours of the programmers time that
+could have been better used debugging instead of typing.  In addition, knowing
+the particular nuances of <emphasis>other languages</emphasis> allow 
+programmers to know when their current language is getting in their way 
+rather than helping them to solve the problem.
+</para>
+
+<para>
+The goal of this book is to introduce you to a wide variety of programming
+language constructs which greatly increase your power as a programmer.  Some
+of the constructs just save typing, but some of them lead to a vastly different
+method of thinking about and arranging your program.  Not all of these ideas 
+apply to all programming languages, but they will help you find new ways to 
+think about programming, and let you know when another language might be more
+adequate at finding a solution.
+</para>
+
+</preface>

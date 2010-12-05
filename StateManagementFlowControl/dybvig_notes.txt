@@ -1,0 +1,15 @@
+Notes from R. Kent Dybvig, Three Implementation Models for Scheme,
+doctorate dissertation for U. North Carolina at Chapel Hill, 1987
+
+Heap-based interpreter - environments, call frames, control stack, closures, continuations
+environment - list of ribs - variable/value ribs
+call frames - list of four fields - expression (next expression to be evalutatied, ie return address), environment, rib (list of args evaluated so far), next frame
+control stack - linked list of call frames
+closure - function body, environment, list of variables
+continuation - current call frame at creation time
+five registers - accumulator, next expression, current env, current value rib, current stack
+
+variable reference - loads accumulator w/ value
+lambda - creates a closure, puts in acc
+set! binds variable with acc value
+evaluation of application - create stack frame to hold env, rib, and return expression. Current rib initialized to nothing.  Each argument is evaluated, and added to the rib.  Function is then called. pgs 53-54, pg55 is heap vm instructions

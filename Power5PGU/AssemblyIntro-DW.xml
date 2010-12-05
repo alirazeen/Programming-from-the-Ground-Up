@@ -1,0 +1,482 @@
+<dw-document xsi:noNamespaceSchemaLocation="http://dw.raleigh.ibm.com/developerworks/library/schema/4.0/dw-document-4.0.xsd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+<dw-article local-site="worldwide" ratings-form="auto" related-contents="auto" toc="auto" skill-level="3">
+<id cma-id="" domino-uid="" content-id="" original="yes"/>
+<keywords content="POWER4 POWER5 PowerPC assembly language 64-bit programming linux linuxppc penguinppc" />
+
+<!-- FIXME - update meta -->
+<meta-last-updated day="06" month="08" year="2006" initials="jlb"/>
+
+<content-area-primary name="linux" />
+
+<title>Introduction to 64-bit POWER5 Assembly Language Programming.  Part 1: Intro to assembly language programming concepts and beginning PowerpC instructions</title>
+
+<author jobtitle="Director of Technology" company="New Medio" email="johnnyb@eskimo.com"  >
+<bio>Jonathan Bartlett is the author of the book <a href="http://www.cafeshops.com/bartlettpublish.8640017"><i>Programming from the Ground Up</i></a> which is an introduction to programming using Linux assembly language.  He is the lead developer at New Medio, developing web, video, kiosk, and desktop applications for clients.
+</bio>
+<name>Jonathan Bartlett</name>
+</author>
+
+<!-- FIXME - update date published -->
+<date-published day="01" month="09" year="2004" />
+<abstract>
+The POWER5 processor is a 64-bit workhorse that is used in a variety of settings.  This tutorial serves as a general introduction to assembly language and specifically assembly language programming for the POWER5.
+</abstract>
+
+<docbody>
+<heading refname="" type="major" toc="yes" alttoc="">The POWER5 and other PowerPC Processor Families</heading>
+
+<p>
+The POWER5 processor is the latest processor in a line of high-powered processors supporting the PowerPC instruction set.  The first 64-bit processor in this line of processors was the POWER3.  The Macintosh G5 processor was an extension of a POWER4 processor with an additional vector processing unit.  The POWER5 processor is the latest generation POWER processor, having both dual-core and simultaneous multithreading capabilities.  This allows a single chip to process four threads simultaneously!  Not only that, each thread can execute a group of up to five instructions every clock cycle. 
+</p>
+<p>
+The PowerPC instruction set is used on a wide variety of chips from IBM and other vendors, not just the POWER line.  It is used in server, workstation, and high-end embedded scenarios (think digital video recorders and routers, not cell phones).  The Gekko chip is used in Nintendo's GameCube and the Xenon is used in the Microsoft Xbox 360.  The Cell Broadband Engine is the up-and-coming architecture using the PowerPC instruction coupled with eight vectore processors.  The Sony PlayStation 3 will use the Cell, as well as numerous other vendors considering it for a wide variety of multimedia applications.
+</p>
+<p>
+As you can see, the PowerPC instruction set is useful far beyond the POWER processor line.  The instruction set itself can operate in either a 64-bit mode or a reduced 32-bit mode.  the POWER5 processor supports both, and Linux distributions on POWER5 support both applications compiled for 32-bit and 64-bit PowerPC instruction sets.
+</p>
+
+<heading refname="" type="minor" toc="no" alttoc="">Getting Access to a POWER5 Processor</heading>
+
+<p>
+All current IBM iSeries and pSeries servers use POWER5 processors and can run Linux.  In addition, open-source developers can request access to POWER5 machines for porting applications through IBM's  OpenPower (http://www.ibm.com/developerworks/linux/openpower/) program.  Running a PowerPC distribution on a G5 Power Macintosh will give you access to a slightly modified POWER4 processor, which is also 64-bit.  G4s and earlier are only 32-bit.
+</p>
+
+<p>
+Debian, Red Hat, SUSE, and Gentoo all have one or multiple distributions supporting the POWER5 processor, with Red Hat Enterprise Linux AS, SuSE Linux Enterprise Server, and OpenSuSE being the only ones supporting the IBM iSeries of servers (the rest supporting IBM pSeries of servers).
+</p>
+
+
+<heading refname="" type="minor" toc="no" alttoc="">High Level versus Low Level Programming</heading>
+<p>
+Most programming languages are fairly processor-independent.  While they may have specific features that rely on certain processor abilities, they are more likely to be operating-system-specific than processor-specific.  These high-level programming languages are built for the express purpose of providing distance between the programmer and the hardware architecture.  This is for several reasons.  While portability is one of them, probably more important is the ability to provide a friendlier model that is geared more towards how programmers think as opposed to how the chip is wired.
+</p>
+<p>
+In assembly language programming, however, you are working directly with the processor's instruction set.  This means that you have essentially the same view of the system that the hardware does.  This has the potential to make assembly language programming more difficult because the programming model is geared towards making the hardware work instead of closely mirroring the problem domain.  The benefits are that you can do system-level work easier and perform optimizations that are very processor-specific.  The drawbacks are that you actually have to think on that level, you are tied to a specific processor line, and you often have to do a lot of extra work to get the problem domain accurately modelled.  
+</p>
+<p>
+One nice thing about assembly language that most people don't think about is that it is very concrete.  In high-level languages, there is a lot going on with every expression.  You sometimes have to wonder just what is occurring under-the-hood.  In assembly language programming, you can have a full grasp of exactly what the hardware is doing.  You can step through the hardware-level changes every step of the way.
+</p>
+
+
+
+<heading refname="" type="major" toc="yes" alttoc="">Fundamentals of Assembly Language</heading>
+
+<p>
+Before getting into the instruction set itself, the two keys to understanding assembly language are understanding the memory model and understanding the fetch-execute cycle.
+</p>
+<p>
+The memory model is very simple.  Memory stores only one thing -- numbers with a limitted range called a byte (on most computers, this is a number between 0 and 255).  Each memory location is located using a sequential address.  Think of a giant roomful of post-office boxes.  Each box is numbered, and each box is the same size.  This is the <i>only</i> thing that computers can store.  Therefore, everything must ultimately be structured in terms of fixed-range numbers.  Thankfully, most processors have the ability to combine multiple bytes together as one unit to handle larger numbers, and also numbers with different ranges (such as floating-point numbers).  However, how specific instructions treat a region of memory is irrelevant to the fact that every memory location is <i>stored in the exact same manner</i>.  In addition to the memory lying in sequential addresses, processors also maintain a set of <i>registers</i>, which are temporary locations for holding data being manipulated or configuration switches.
+</p>
+<p>
+The fundamental process that controls processors is the fetch-execute cycle.  Processors have a register known as the program counter, which holds the address of the next instruction to execute.  The fetch-execute works in the following way:
+</p>
+
+<ul>
+<li>The program counter is read, and the instruction is read from the address listed there</li>
+<li>The program counter is updated to point to the next instruction</li>
+<li>The instruction is decoded</li>
+<li>All memory items needed to process the instruction are loaded</li>
+<li>The computation is processed</li>
+<li>The results are stored</li>
+</ul>
+
+<p>
+The reality of how this occurs is actually much more complicated, especially since the POWER5 processor can execute up to five instructions simultaneously.  However, this suffices for a mental model.
+</p>
+<p>
+The PowerPC architecture is characterized as a load/store architecture.  This means that all calculations are performed on registers, not main memory.  Memory access is simply for loading data into registers and storing data from registers into memory.  This is different from, say, the x86 architecture, in which nearly every instruction can operate on memory, registers, or both.  Load/store architectures typically have many general-purpose registers.  The PowerPC has 32 general-purpose registers and 32 floating-point registers, which are each numbered (as apposed to the x86, where the registers are named rather than numbered).  The operating system's ABI (application binary interface) will likely make special use of the firstIt also has a few special-purpose registers for holding status information and return addresses.  There are other special-purpose registers available to supervisor-level applications, but these are beyond the scope of this article.  The general-purpose registers are 32 bits on 32-bit architectures and 64 bits on 64-bit architectures.  This article series focuses on the 64-bit architectures.  
+</p>
+<p>
+Instructions in assembly language are very low-level -- they can only perform one (or sometimes a few) operations at a time.  For example, while in C I can write <code type="inline">d = a + b + c - d + some_function(e, f - g)</code>, in assembly language each addition, subtraction, and function call would have to be its own instruction, and in fact the function call might be several.  This may seem tedious at times.  However, there are three important benefits.  First, simply knowing assembly language will help you write better high-level code, since you will understand what is going on at the lower levels.  Second, the fact that you have access to all of the minutia of assembly language means that you can optimize speed-critical loops beyond what your compiler can do.  Compilers are fairly good at code optimization.  However, knowing assembly language can help you understand both the optimizations that the compiler is making (using the <code type="inline">-S</code> switch in gcc has the compiler spitting out assembly rather than object code), and help you spot the ones that it is missing.   Third, you will have access to the full power of the PowerPC chip, much of which can actually make your code more compact than possible in higher-level languages.
+</p>
+<p>
+So, without further ado, let's dive into the PowerPC instruction set.  Here are some PowerPC instructions that are useful to beginners:
+</p>
+
+<dl>
+
+
+<dt>li REG, VALUE</dt><dd><p>loads register REG with the number VALUE</p></dd>
+
+<dt>add REGA, REGB, REGC</dt><dd><p>adds REGB with REGC and stores the result in REGA</p></dd>
+
+<dt>addi REGA, REGB, VALUE</dt><dd><p>add the number VALUE to REGB and stores the result in REGA</p></dd>
+
+<dt>mr REGA, REGB</dt><dd><p>copies the value in REGB into REGA</p></dd>
+
+<dt>or REGA, REGB, REGC</dt><dd><p>performs a logical "or" between REGB and REGC, and stores the result in REGA</p></dd>
+
+<dt>ori REGA, REGB, VALUE</dt><dd><p>performs a logical "or" between REGB and VALUE, and stores the result in REGA</p></dd>
+
+<dt>and, andi, xor, xori, nand, nand, and nor</dt><dd><p>all of these follow the same pattern as "or" and "ori" for the other logical operations</p></dd>
+
+<dt>ld REGA, 0(REGB)</dt><dd><p>use the contents of REGB as the memory address of the value to load into REGA</p></dd>
+
+<dt>lbz, lhz, and lwz</dt><dd><p>all of these follow the same format, but operate on bytes, halfwords, and words, respectively (the "z" indicates that they also zero-out the rest of the register)</p></dd>
+
+<dt>b ADDRESS</dt><dd><p>jump (or <i>branch</i>) to the instruction at address ADDRESS</p></dd>
+
+<dt>bl ADDRESS</dt><dd><p>subroutine call to address ADDRESS</p></dd>
+
+<dt>cmpd REGA, REGB</dt><dd><p>compare the contents of REGA and REGB, and set the bits of the status register appropriately</p></dd>
+
+<dt>beq ADDRESS</dt><dd><p>branch to ADDRESS if the previously compared register contents were equal</p></dd>
+
+<dt>bne, blt, bgt, ble, and bge</dt><dd><p>all of these follow the same form, but check for inequality, less than, greater than, less than or equal to, and greater than or equal to, respectively.</p></dd>
+
+<dt>std REGA, 0(REGB)</dt><dd><p>use the contents of REGB as the memory address to save the value of REGA into</p></dd>
+
+<dt>stb, sth, and stw</dt><dd><p>all of these follow the same format, but operate on bytes, halfwords, and words, respectively</p></dd>
+
+<dt>sc</dt><dd><p>makes a system call to the kernel</p></dd>
+</dl>
+
+<p>
+Notice that all instructions that compute a value use the first operand as the destination register.  In all of these instructions the registers are specified only by their number.  For example, the instruction for loading the number 12 into register 5 is <code type="inline">li 5, 12</code>.  We know that 5 refers to a register and 12 refers to the number 12 because of the instruction format -- there is no other indicator.
+</p>
+<p>
+Each PowerPC instruction is 32 bits long.  The first six bits determine the instruction and the remaining portions have different functions depending on the instruction.  The fact that they are fixed-length allows the processor to process them more efficiently.  However, the limitation to 32 bits can cause a few headaches, which we will encounter.  The solutions to most of these headaches will be discussed in part 2.  
+</p>
+<p>
+Many of the instructions above make use of the PowerPC <i>extended mnemonics</i>.  This means that they are actually specializations of a more general instruction.  For example, all of the conditional branches mentioned above are actually specializations of the <code type="inline">bc</code> (branch conditional) instruction.  The form of the <code type="inline">bc</code> instruction is <code type="inline">bc MODE, CBIT, ADDRESS</code>.  The <code type="inline">CBIT</code> is the bit of the condition register to test.  The <code type="inline">MODE</code> has lots of interesting uses, but for simple uses you set it to 12 if you want to branch if the condition bit is set, and 4 if you want to branch if the condition bit is not set.  Some of the important condition register bits are 8 for less than, 9 for greater than, and 10 for equal.  Therefore, the instruction <code type="inline">beq ADDRESS</code> is really <code type="inline">bc 12, 10 ADDRESS</code>.  Likewise <code type="inline">li</code> is a specialized form of <code type="inline">addi</code> and <code type="inline">mr</code> is a specialized form of <code type="inline">or</code>.  These extended mnemonics help make PowerPC assembly language programs more readable and writable for simpler programs, while not removing the power available for more advanced programs and programmers.
+</p>
+
+
+
+<heading refname="" type="major" toc="yes" alttoc="">Your First POWER5 Program</heading>
+
+<p>
+Now let's get into some actual code.  The first program we write won't do anything at all except load two values, add them together and exit with the result as a status code.  Type the following into a file named <filename>sum.s</filename>:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 1. Your First POWER5 Program</heading>
+#Data sections holds writable memory declarations
+.data
+.align 3  #align to 8-byte boundary
+
+#This is where we will load our first value from
+first_value:
+        #"quad" actually emits 8-byte entities
+        .quad 1
+second_value:
+        .quad 2
+
+#Write the "official procedure descriptor" in its own section
+.section ".opd","aw"
+.align 3 #align to 8-byte boundary
+
+#procedure description for ._start
+.global _start
+#Note that the description is named _start, and the beginning of the code is labelled ._start
+_start:
+        .quad ._start, .TOC.@tocbase, 0
+
+#Switch to ".text" section for program code
+.text
+._start:
+        #Use register 7 to load in an address
+        #64-bit addresses must be loaded in 16-bit pieces
+
+        #Load in the high-order pieces of the address
+        lis 7, first_value@highest
+        ori   7, 7, first_value@higher
+        #Shift these up to the high-order bits
+        rldicr 7, 7, 32, 31
+        #Load in the low-order pieces of the address
+        oris 7, 7, first_value@h
+        ori  7, 7, first_value@l
+
+        #Load in first value to register 4, from the address we just loaded
+        ld 4, 0(7)
+
+        #Load in the address of the second value
+        lis 7, second_value@highest
+        ori 7, 7, second_value@higher
+        rldicr 7, 7, 32, 31
+        oris 7, 7, second_value@h
+        ori 7, 7, second_value@l
+
+        #Load in the second value to register 5, from the address we just loaded
+        ld 5, 0(7)
+
+        #Calculate the value and store into register 6
+        add 6, 4, 5
+
+        #Exit with the status
+        li 0, 1    #system call is in register 0
+        mr 3, 6    #Move result into register 3 for the system call
+
+        sc
+</code>
+
+
+<p>
+Before discussing the program itself, let's build it and run it.  The first step in building this program is to <i>assemble</i> it:
+</p>
+
+<code type="section">
+as -a64 sum.s -o sum.o
+</code>
+
+<p>
+This produces a file called <filename>sum.o</filename> containing the <i>object code</i>, which is the machine-language version of your assembly code, plus additional information for the linker.  The "-m64" switch tells the assembler that you are using the 64-bit ABI as well as 64-bit instructions.  The generated object code is the machine-language form of the code, however, it cannot be run directly as-is.  It needs to be <i>linked</i> it so that it is ready for the operating system to load it and run it.  To link, do the following:
+</p>
+
+<code type="section">
+ld -melf64ppc sum.o -o sum
+</code>
+
+<p>
+This will produce the executable <i>sum</i>.  To run the program, do:
+</p>
+
+<code type="section">
+./sum
+echo $?
+</code>
+
+<p>
+This will print out "3", which is the final result.  Now let's look at how the code actually works.
+</p>
+<p>
+Since assembly language code works very close to the level of the operating system itself, it is organized very closely to the object  and executable files which it will produce.  So, to understand the code, we first need to understand object files.  
+</p>
+<p>
+Object and executable files are divided up into "sections".  Each section is loaded into a different place in the address space when the program is executed.  They have different protections and purposes.  The main sections we will concern ourselves with are:
+</p>
+
+<dl>
+
+<dt>.data</dt><dd><p>contains the pre-initialized data used for the program</p></dd>
+
+<dt>.text</dt><dd><p>contains the actual code (historically known as the program text)</p></dd>
+
+<dt>.opd</dt><dd><p>contains "official procedure declarations" which are used to assist in linking functions and specifying the entry point to a program (the entry point is the first instruction in the code to be executed)</p></dd>
+</dl>
+
+<p>
+The first thing our program does is switch to the .data section, and set alignment to an 8-byte boundary (.align 3 advances the assembler's internal address counter until it is a multiple of 2^3).  
+</p>
+<p>
+The line that says <code type="inline">first_value:</code> is a symbol declaration.  This creates a symbol called <code type="inline">first_value</code> which is synonymous with the address of the next declaration or instruction listed in the assembler.  Note that <code type="inline">first_value</code> itself is a <i>constant</i>, not a variable, though the memory address it refers to may be updateable.  <code type="inline">first_value</code> is simply an easy way to refer to a specific address in memory.  
+</p>
+<p>
+The next directive, <code type="inline">.quad 1</code>, creates an 8-byte data value, holding the value 1. 
+</p>
+<p>
+After this, we have a similar set of directives defining the address <code type="inline">second_value</code> holding an 8-byte data item with a value of 2.
+</p>
+<p>
+The <code type="inline">.section ".opd", "aw"</code> creates an ".opd" section for our procedure descriptors.  We force the section to align at an 8-byte boundary.  We then declare the symbol <code type="inline">_start</code> to be global, which means that it will not be discarded after linking.  After that, the <code type="inline">_start</code> symbol itself is declared (the .globl assembler does not define _start, it only marks it to be global once it is defined).  The next three data items generated are the procedure descriptor, which will be discussed in a later article.   
+</p>
+<p>
+Now we can switch to actual program code.  The <code type="inline">.text</code> directive tells the assembler that we are switching to the ".text" section.   After this is where <code type="inline">._start</code> is defined.
+</p>
+<p>
+The first set of instructions loads in the <i>address</i> of the first value (not the value itself).  Because PowerPC instructions are only 32-bits long, there are only 16 bits available within the instruction for loading constant values (remember, the <i>address</i> of <code type="inline">first_value</code> is constant).  Therefore, since the address can be up to 64 bits, we have to load it a piece at a time (part 2 of this series will show how to avoid this).  <code type="inline">@</code>-signs within the assembler instruct the assembler to give a specially-processed form of a symbol value.  The following are used here:
+</p>
+
+<dl>
+
+<dt>@highest</dt><dd><p>refers to bits 48-63 of a constant</p></dd>
+
+<dt>@higher</dt><dd><p>refers to bits 32-47 of a constant</p></dd>
+
+<dt>@h</dt><dd><p>refers to bits 16-31 of a constant</p></dd>
+
+<dt>@l</dt><dd><p>refers to bits 0-15 of a constant</p></dd>
+</dl>
+
+<p>
+The first instruction used stands for "load immediate shifted".  This loads the value on the far right side (bits 48-63 of <code type="inline">first_value</code>), shifts the number to the left 16 bits, and then stores the result into register 7.  Bits 16-31 of register 7 now contain bits 48-63 of the address.  Next we use the "or immediate" instruction to perform a logical or operation with register 7 and the value on the right side (bits 32-47 of <code type="inline">first_value</code>), and store the result in register 7.  Now bits 32-47 of the address are in bits 0-15 of register 7.  Register 7 is now shifted left 32 bits, with bits 0-31 cleared out, and the result is stored in register 7.  Now bits 32-63 of register 7 contain bits 32-63 of the address we are loading.  The next two instructions use "or immediate" and "or immediate shifted" instructions to load bits 0-31 in a similar manner.
+</p>
+<p>
+That's quite a lot of work just to load a single 64-bit value.  That's why most operations on PowerPC chips operate through registers instead of immediate values -- register operations can use all 64-bits at once, rather than being limited by the instruction length.  In the next article we will cover the addressing modes that make this easier.
+</p>
+<p>
+Now, remember, this only loads in the <i>address</i> of the value we want to load.  Now we want to load the value itself into a register.  To do this, we will use register 7 to tell the processor what address we want to load the value from.  This will be indicated by putting "7" in parentheses.  The instruction <code type="inline">ld 4, 0(7)</code> loads the value at the address in register 7 into register 4 (the zero means to add zero to that address).  Now register 4 has the first value.
+</p>
+<p>
+A similar process is used to load the second value into register 5.
+</p>
+<p>
+After the registers are loaded, we can now add our numbers.  The instruction <code type="inline">add 6, 4, 5</code> adds the contents of register 4 to register 5, and stores the result in register 6 (registers 4 and 5 are unaffected).  
+</p>
+<p>
+Now that we have computed the value we want, the next thing we want to do is use this value as the return/exit value for the program.  The way that you exit a program in assembly language is by issuing a <i>system call</i> to do so (exitting is done using the <code type="inline">exit</code> system call).  Each system call has an associated number.  This number is stored in register zero before making the call.  The rest of the arguments start in register three, and continue on for however many arguments the system call needs.  Then the <code type="inline">sc</code> instruction causes the kernel to take over and respond to the reequest.  The system call number for <code type="inline">exit</code> is 1. Therefore, the first thing we need to do is to move the number 1 into register 0.  
+</p>
+<p>
+On PowerPC machines, this is done by adding.  The <code type="inline">addi</code> instruction adds together a register and a number and stores the result in a register.  In some instructions (including addi), if the specified register is register 0, it doesn't add a register at all, and uses the number 0 instead.  This seems confusing, but the reason for it is to allow PowerPCs to use the same instruction for adding as for loading.
+</p>
+<p>
+The exit system call takes one parameter -- the exit value.  This is stored in register 3.  Therefore, we need to move our answer from register 6 to register 3.  The "register move" instruction <code type="inline">rm 3, 6</code> performs the needed move.  Now we are ready to tell the operating system we are ready for it to do its trick.
+</p>
+<p>
+The instruction to call the operating system is simply <code type="inline">sc</code> for "system call".  This will invoke the operating system, which will read what we have in register 0 and register 3, and then exit with the contents of register 3 as our return value.  On the command line, we can retrieve this value using the command <code type="inline">echo $?</code>.
+</p>
+<p>
+Just to point out, a lot of these instructions are redundant, but used for teaching purposes.  For example, since <code type="inline">first_value</code> and <code type="inline">second_value</code> are essentially constant, there is no reason we can't just load them directly and skip the data section altogether.  Likewise, we could have stored the results in register 3 to begin with (instead of register 6), and saved a register move.  In fact, we could have used register 3 for <i>both</i> a source and a destination register.  So, if we were just trying to be concise, we could have written it like this:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 2. A short version of the first program</heading>
+.section ".opd", "aw"
+.align 3
+.global _start
+_start:
+	.quad ._start, .TOC.@tocbase, 0
+.text
+	li 3, 1   #load "1" into register 3
+	li 4, 2   #load "2" into register 4
+	add 3, 3, 4    #add register 3 to register 4 and store the result in register 3
+	li 0, 1   #load "1" into register 0 for the system call
+	sc
+</code>
+
+
+
+
+<heading refname="" type="major" toc="yes" alttoc="">Finding a Maximum Value</heading>
+<p>
+For our next program, we will have a program that is a little more functional -- we will find a maximum of a set of values and exit with the result.
+</p>
+
+<p>
+Here is the program;  enter it as <filename>max.s</filename>:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 3. Finding a maximum value</heading>
+###PROGRAM DATA###
+.data
+.align 3
+#value_list is the address of the beginning of the list
+value_list:
+        .quad 23, 50, 95, 96, 37, 85
+#value_list_end is the address immediately after the list
+value_list_end:
+
+###STANDARD ENTRY POINT DECLARATION###
+.section "opd", "aw"
+.global _start
+.align 3
+_start:
+        .quad ._start, .TOC.@tocbase, 0
+
+###ACTUAL CODE###
+.text
+._start:
+
+        #REGISTER USE DOCUMENTATION
+        #register 3 -- current maximum
+        #register 4 -- current value address
+        #register 5 -- stop value address
+        #register 6 -- current value
+
+        #load the address of value_list into register 4
+        lis 4, value_list@highest
+        ori 4, 4, value_list@higher
+        rldicr 4, 4, 32, 31
+        oris 4, 4, value_list@h
+        ori 4, 4, value_list@l
+
+        #load the address of value_list_end into register 5
+        lis 5, value_list_end@highest
+        ori 5, 5, value_list_end@higher
+        rldicr 5, 5, 32, 31
+        oris 5, 5, value_list_end@h
+        ori 5, 5, value_list_end@l
+   
+        #initialize register 3 to 0
+        li 3, 0  
+
+        #MAIN LOOP
+loop:
+        #compare register 4 to 5
+        cmpd 4, 5
+        #if equal branch to end
+        beq end
+
+        #load the next value
+        ld 6, 0(4) 
+
+        #compare register 6 (current value) to register 3 (current maximum)
+        cmpd 6, 3
+        #if reg. 6 is not greater than reg. 3 then branch to loop_end
+        ble loop_end
+
+        #otherwise, move register 6 (current) to register 3 (current max)
+        mr 3, 6 
+
+loop_end:
+        #advance pointer to next value (advances by 8-bytes)
+        addi 4, 4, 8 
+        #go back to beginning of loop
+        b loop
+
+
+end:
+        #set the system call number
+        li 0, 1
+        #register 3 already has the value to exit with
+        #signal the system call
+        sc
+</code>
+
+
+<p>
+To assemble, link, and run the program, do:
+</p>
+
+<code type="section">
+as -a64 max.s -o max.o
+ld -melf64ppc max.o -o max
+./max
+echo $?
+</code>
+
+<p>
+Hopefully now that you have experience with one PowerPC program and know a few instructions, you can follow the code a little bit.  The data section is the same as before, except that we have several values after our <code type="inline">value_list</code> declaration.  Note that this does not change <code type="inline">value_list</code> at all -- it is still a constant referring to the address of the first data item that immediately follows it.  The data after it is using 64-bits (signified by <code type="inline">.quad</code>) per value.  The entry point declaration is the same as previous.
+</p>
+<p>
+In the program itself,  one thing to notice is that we documented what we were using each register for.  This practice will help you immensely to keep track of your code.  Register 3 is the one we are storing the current maximum value in, which we initially set to 0.  Register 4 contains the address of the next value to load.  It starts out at value_list and advances forward by 8 each iteration.  Register 5 contains the address immediately following the data in value_list.  This allows a simple comparison between register 4 and register 5 to know when we are at the end of the list, and need to branch to <code type="inline">end</code>.  Register 6 contains the current value loaded from the location pointed to by register 4.  In every iteration it is compared with register 3 (current maximum), and register 3 is replaced if register 6 is larger.
+</p>
+<p>
+Note that we marked each branchpoint with its own symbolic label, which allowed us to use those labels as the targets for branch instructions.  For example, <code type="inline">beq end</code> branches to the code immediately following the <code type="inline">end</code> symbol definition later on in the code. 
+</p>
+<p>
+Another instruction to note is <code type="inline">ld 6, 0(4)</code>.  This uses the contents of register 4 as a memory address from which to retrieve a value, which it then stores into register 6.
+</p>
+
+
+
+<heading refname="" type="major" toc="yes" alttoc="">Conclusion</heading>
+
+<p>
+Hopefully now you have a basic feel for assembly language programming on the PowerPC.  The instructions may look a little wierd at first, but they will become second-nature with practice.  In the next article, we will cover the various addressing modes of both the PowerPC processor, and how they can be used to do 64-bit programming more effectively.  In the third article, we will cover the ABI more fully, discussing what registers are used for what purpose, how to call and return from functions, and other interesting aspects of the ABI.
+</p>
+
+
+</docbody>
+<related-list>
+</related-list>
+
+<resource-list>
+<ul>
+<li>If you want to know all of the details of the instructions available on POWER5 processors, check out the <a href="http://www-128.ibm.com/developerworks/eserver/library/es-archguide-v2.html">IBM architecture books</a>.</li>
+<li>If you want to know the nitty gritty on how the PowerPC interfaces with the operating system and the C programming language, see the <a href="http://www.freestandards.org/spec/ELF/ppc64/PPC-elf64abi-1.9.html">64-bit PPC ELF ABI supplement</a> and the <a href="http://www-306.ibm.com/chips/techlib/techlib.nsf/techdocs/852569B20050FF7785256996007558C6">PowerPC Compiler Writer's Guide</a>.</li>
+<li>For an introduction to 32-bit PowerPC programming on Linux see <a href="http://linuxgazette.net/117/pramode.html">this guide to assembly language programming on Mac Minis</a>.</li>
+<li>If you just want to know how to port your C applications to 64-bit PowerPC <a href="http://www-128.ibm.com/developerworks/library/pa-nlaug04-introembeddev.html">see this article</a>.</li>
+<li>To learn more about the POWER5 processor, see here</li>
+<li>Apple has <a href="http://www.apple.com/g5processor/">page about the G5 processor</a> which is based off of the POWER4 processor.</li>
+<li>To learn more about Linux on POWER processors, see <a href="http://www-941.ibm.com/collaboration/wiki/display/LinuxP/Home">the wiki</a>.</li>
+<li>To learn more about IBM's Cell Processor, see <a href="http://www-128.ibm.com/developerworks/power/cell/">IBM's Cell resource center</a>.</li>
+<li>To learn to program on Linux using the x86 series of processors, see <a href="http://www.cafeshops.com/bartlettpublish.8640017">my book</a>.</li>
+</ul>
+</resource-list>
+
+</dw-article>
+</dw-document>
+

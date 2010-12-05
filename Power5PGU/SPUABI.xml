@@ -1,0 +1,490 @@
+<chapter>
+<title>The SPU ABI</title>
+
+<sect1>
+<title>The SPU Stack Frame</title>
+<para>
+To begin looking at the SPU ABI, we will enter in a simple program for calculating the factorial of a 32-bit number using a recursive algorithm.  The recursive nature of the algorithm will help us illustrate the standard ABI.
+</para>
+
+<para>
+For reference, here is the C code which would perform the same function:
+</para>
+
+<example>
+<title>C Version of Factorial Program</title>
+<programlisting>
+int number = 4;
+int main() {
+	printf("The factorial of %d is %d\n", number, factorial(number);
+}
+
+int factorial(int num) {
+	if(num == 0) {
+		return 1;
+	} else {
+		return num * factorial(num - 1);
+	}
+}
+</programlisting>
+</example>
+
+<para>
+Now let's enter in the assembly language version of this program, and then we can discuss what each line means.  Enter the following as <filename>factorial.s</filename>:
+</para>
+
+<example>
+<title>First SPE Program</title>
+<programlisting>
+###DATA SECTION###
+.data
+
+##GLOBAL VARIABLE##
+#Alignment is _critical_ in SPU applications.
+#This aligns to a 16-byte (128-bit) boundary
+.align 4
+#This is the number
+number:
+        .long 4
+
+.align 4
+output:
+	.ascii "The factorial of %d is %d\n\0"
+
+##STACK OFFSETS##
+#Offset in the stack frame of the link register
+.equ LR_OFFSET, 16
+#Size of main's stack frame (back pointer + return address)
+.equ MAIN_FRAME_SIZE, 32
+#Size of factorial's stack frame (back pointer + return address + local variable)
+.equ FACT_FRAME_SIZE, 48
+#Offset in the factorial's stack frame of the local "num" variable
+.equ LCL_NUM_VALUE, 32
+
+
+###CODE SECTION###
+.text
+
+##MAIN ENTRY POINT
+.global main
+.type main,@function
+main:
+	#PROLOGUE#
+	stqd $lr, LR_OFFSET($sp)
+	stqd $sp, -MAIN_FRAME_SIZE($sp)
+	ai $sp, $sp, -MAIN_FRAME_SIZE
+
+	#FUNCTION BODY#
+        #Load number as the first parameter (relative addressing)
+        lqr $3, number
+
+        #Call factorial
+        brsl $lr, factorial
+
+	#Display Factorial
+	#Result is in register 3 - move it to register 5 (third parameter)
+	lr $5, $3
+	#Load output string into register 3 (first parameter)
+	ila $3, output
+	#Put original number in register 4 (second parameter)
+	lqr $4, number
+	#Call printf (this actually runs on the PPE)
+	brsl $lr, printf
+
+	#Load register 3 with a return value of 0
+	il $3, 0
+
+	#EPILOGUE#
+	ai $sp, $sp, MAIN_FRAME_SIZE
+	lqd $lr, LR_OFFSET($sp)
+	bi $lr
+
+##FACTORIAL FUNCTION
+factorial:
+        #PROLOGUE#
+        #Before we set up our stack frame,
+        #store link register in caller's frame
+        stqd $lr, LR_OFFSET($sp)
+        #Store back pointer before reserving the stack space
+        stqd $sp, -FACT_FRAME_SIZE($sp)
+        #Move stack pointer to reserve stack space
+        ai $sp, $sp, -FACT_FRAME_SIZE
+        #END PROLOGUE#
+
+        #Save arg 1 in local variable space
+        stqd $3, LCL_NUM_VALUE($sp)
+        #Compare to 0, and store comparison in reg 4
+        ceqi $4, $3, 0
+        #Do we jump? (note that the "zero" we are comparing
+        #to is the result of the above comparison)
+        brnz $4, case_zero
+
+case_not_zero:
+        #remove 1, and use it as the function argument
+        ai $3, $3, -1
+        #call factorial function (return value in reg 3)
+        brsl $lr, factorial
+        #Load in the value of the current number
+        lqd $5, LCL_NUM_VALUE($sp)
+        #multiply the last factorial answer with the current number
+        #store the answer in register 3 (the return value register)
+        mpyu $3, $3, $5
+
+	#EPILOGUE#
+        #Restore previous stack frame
+        ai $sp, $sp, FACT_FRAME_SIZE
+        #Restore link register
+        lqd $lr, LR_OFFSET($sp)
+        #Return
+        bi $lr
+
+case_zero:
+        #Put 1 in reg 3 for the return value
+        il $3, 1
+	##EPILOGUE##
+        #Restore previous stack frame
+        ai $sp, $sp, FACT_FRAME_SIZE
+        #Return
+        bi $lr
+</programlisting>
+</example>
+
+<para>
+To build the program, we will just use the C compiler:
+</para>
+
+<programlisting>
+spu-gcc -o factorial factorial.s
+</programlisting>
+
+<para>
+Now the Cell does not run SPE programs directly.  It actually requires that the main code be written for the PPE to manage resources.  However, Linux will, if given an SPE-only program, create a skeleton PPE process to manage the SPE program for you.  So you can just run the program as normal:
+</para>
+
+<programlisting>
+./factorial
+</programlisting>
+
+<para>
+If that doesn't work, be sure that the <literal>elfspu</literal> paackage is installed appropriately (see <ulink url="">previous article</ulink> for instructions).
+</para>
+
+
+<para>
+Don't be taken back by the size of the code - it's mostly comments and declarations.  The factorial function itself only has 16 instructions.
+Let's take a look at what each instruction does.</para>
+
+<para>
+The program starts off with a typical <literal>.data</literal> declaration.  In assembly language, the static data and global variables are separated out in memory from the code.  You can switch back and forth between data and code sections, but when the program is assembled it will bring all of each section together into one unit.  <literal>.data</literal> switches into the data section, while <literal>.text</literal> switches into the code section. 
+</para>
+
+<para>
+The data section holds the value we want to compute the factorial of in a space labelled <literal>number</literal>.  Putting a word at the beginning of a line with a colon after it indicates that the address of the following declaration or instruction can be referred to throughout the program by that label.  So, throughout the code, anywhere where we have <literal>number</literal> it will refer to the address of the next value.  <literal>.long</literal> is a declaration which stores a value in a 32-bit space.  In this case, we are storing the number 4.
+</para>
+
+<para>
+Note, however, that before we define <literal>number</literal>, we align it using <literal>.align 4</literal>.  The <literal>.align</literal> operation tells the assembler to align the next instruction or declaration at a certain boundary.  <literal>.align 4</literal> aligns the next memory location to a 16-byte (2^4) boundary.  This is critical, as the SPU can only load exactly 16 bytes at a time, aligned to exactly a 16-byte boundary.  If it is given an address to load from that is not at a 16-byte boundary, it simply zeroes out the last four bits of the address before loading to in order to do an aligned load.  Therefore, if our value is not properly aligned, it could be loaded <emphasis>anywhere</emphasis> within the register - probably somewhere in the register that we don't expect.  By aligning it to a 16-byte boundary, we know that it will load into the first four bytes of the register.  After that is another alignment statement for the beginning of the string that gives our output.  The <literal>.ascii</literal> declaration tells the assembler that what follows is an ASCII string, which is explicitly terminated with a <literal>\0</literal>.
+</para>
+
+<para>
+After this, we define several constants for our stack frames.  Remember that when a program makes a function call (especially for recursive ones), it has to store its return address and local variables on the stack.  In C and other high-level languages, the language itself manages the run-time stack.  In assembly language, this is handled explicitly by the programmer.  The stack is set up for us by the operating system when the program starts.  The stack starts at the high-numbered addresses of this region, and grows toward the low-numbered addresses as stack frames are added.  We have to allocate space for each stack, and move the appropriate values to that space.  In this program we will have two stack frame sizes - one for <literal>main</literal> and one for <literal>factorial</literal>.  Each stack frame holds a pointer to the previous stack frame (called the <emphasis>back chain pointer</emphasis>), as well as a space for return addresses for when it calls other functions.  While each of these is only a word size (4-byte) value, they are each aligned to 16 bytes for easy loading and storing (remember, the SPUs only load from 16-byte-aligned addresses).  The remaining space is used for saving registers and storing local variables.  <literal>main</literal>'s stack will be the minimum of 32 bytes, while <literal>factorial</literal>'s will be 48, because <literal>factorial</literal> has a local variable to store.  In order to name these quantities within the program and make the code more readable, we give these values symbols through the <literal>.equ</literal> operation.  This tells the assembler to equate the given symbol with the given value.  The stack frame sizes are assigned to the symbols <literal>MAIN_FRAME_SIZE</literal> and <literal>FACT_FRAME_SIZE</literal>, respectively.  <literal>LR_OFFSET</literal> is the offset into the stack frame of the return address.  <literal>LCL_NUM_VALUE</literal> is the stack offset of the local variable <literal>num</literal>.  These will all be used to make access to stack frame offsets much clearer in the main body of code.
+</para>
+
+<para>
+In the code section, we define a function's address the same way we defined addresses for global variables above - just put their name followed by a colon.  This indicates that the function's address will be the address of the next instruction.  We use <literal>.type</literal> to tell the linker that this value should be used as a function, and we use <literal>.global</literal> to tell the linker that this symbol can be referenced outside of the current file when linking.   <literal>main</literal> must be declared global, because it is used as the entry point to the program.  Now let's get into the actual assembly instructions themselves.
+</para>
+
+<para>
+We will discuss what the prologue does when we discuss the <literal>factorial</literal> function. For right now, just know that it sets up the stack frame.
+</para>
+
+<para>
+The first actual instruction we hit is <literal>lqr $3, number</literal>.  This stands for "load quadword relative".  The "quadword" part is a bit redundant, as only quadword loads and stores are allowed on the SPU.  This loads the value in the address <literal>number</literal> (encoded as a relative address from the current instruction) into register 3.  Unlike PPE assembly language, in SPE assembly language registers are always prefixed with a dollar sign.  This makes it much easier to spot registers in the code.  Since all registers on the SPU are 16-bytes long, this will load a full 16-byte quadword into the register, even though we are only really concerned with the first 4 bytes of it.
+</para>
+
+<para>
+What we want to do with this value in register 3 is to calculate the factorial of it.  Therefore, we need to pass it as the first (and only) parameter to the <literal>factorial</literal> function.  THE SPU ABI, like the PPU ABI, uses registers to pass values to functions.  Register 3 should hold the first parameter, register 4 should hold the second one, etc.  Therefore, the value we loaded into register three is already in the perfect spot for the function.  Although registers can hold multiple values (in this case, four 32-bit values), when passing parameters to a function each parameter value is passed in its own register.
+</para>
+
+<para>
+This brings up the point of what are registers used for?  If you've never programmed assembly language before, registers are the temporary storage that processors use for computing values.  Since the SPU has 128 registers, it can keep a lot of temporary and intermediate values around without having to load and store back into memory like other architectures.  This makes for both easier programming and faster execution.  While the SPU makes no distinction in how registers are used, the ABI standard does.  Here is a table of how the ABI uses each register within the SPU:
+</para>
+
+<table>
+<caption>Register Usage in the SPU ABI</caption>
+<tr><th>Register Range</th><th>Type</th><th>Purpose</th></tr>
+<tr><td>0</td><td>Dedicated</td><td>Link Register</td></tr>
+<tr><td>1</td><td>Dedicated</td><td>Stack Pointer</td></tr>
+<tr><td>2</td><td>Volatile</td><td>Environment Pointer (for languages that need one)</td></tr>
+<tr><td>3-79</td><td>Volatile</td><td>Function arguments, return values, and general usage.</td></tr>
+<tr><td>80-127</td><td>Non-volatile</td><td>Used for local variables.  Must be preserved across function calls.</td></tr>
+</table>
+
+<para>
+We will get to the link register shortly, but basically it is used for temporary storage of return addresses.  The stack pointer tells us where the end of our current stack frame is.  The environment pointer is not used in most languages.  All of the registers marked <emphasis>volatile</emphasis> can be freely changed within a function.  However, that means that when a function makes a function call, it should expect that all of the values in volatile registers will be overwritten.  All of the registers marked <emphasis>non-volatile</emphasis> must have their previous value saved before use, and restored before returning from a function call.  This allows you to have a set of registers which can be counted on to be preserved across function calls.  However, they take more work to use, since your code must save and restore their previous values.  The return value comes back in register 3.
+</para>
+
+<para>
+As we said, since we want the factorial of the number 4, it goes into register 3, the register used for the first parameter.  We then branch to the function using <literal>brsl $lr, factorial</literal>.  <literal>brsl</literal> stands for "branch relative and set link".  This branches to the function entry point and sets the <emphasis>link register</emphasis> (LR) to the next instruction for the return address.  Note that when we do <literal>brsl</literal> that we specify <literal>$lr</literal> for the register.  This is an alias for <literal>$0</literal>.  Notice also that we had to specify the link register explicitly.  As we mentioned, the SPU has not special registers.  The link register is only special by convention - the assembly language allows us to set the link in <emphasis>any</emphasis> register we choose.  However, for most purposes, this will be <literal>$lr</literal>.
+</para>
+
+<para>
+After computing the factorial, we now want to print it out using <literal>printf</literal>.  The first parameter to <literal>printf</literal> is the address of an output string.  Therefore, we first need to move the result from register 3 to register 5 (register 4 will hold the original number).  Then we need to move the address <literal>output</literal> into register 3.  <literal>ila</literal> is a special load instruction that loads static addresses, in this case loading the address of the output string into register 3.  It loads 18-bit unsigned values, which is the perfect size for local store addresses on the PS3.  Finally, the original number is loaded into register 4.  The <literal>printf</literal> function is called using <literal>brsl $lr, printf</literal>.  Please note, however, that <literal>printf</literal> <emphasis>is not executed on the SPE</emphasis> because the SPE is incapable of input and output.  This actually goes to a stub function which stops the SPE processor, signals the PPE, and the PPE actually performs the function call.  After that, control is returned to the SPE.
+</para>
+
+<para>
+The epilogue will be discussed in the discussion of the <literal>factorial</literal> code, but it basically just takes down the stack frame and returns to the previous function.
+</para>
+
+<para>
+Before we move into a discussion of the <literal>factorial</literal> function, let's take a look at the layout of a stack frame more closely.  Here is how the stack is supposed to be laid out according to the ABI:
+</para>
+
+<table>
+<caption>SPU Stack Layout</caption>
+<tr><th>Contains</th><th>Size</th><th>Beginning Stack Offset</th></tr>
+<tr><td>Register Save Area</td><td>Varies (multiple of 16 bytes)</td><td>Varies</td></tr>
+<tr><td>Local Variable Space</td><td>Varies (multiple of 16 bytes)</td><td>Varies</td></tr>
+<tr><td>Parameter List</td><td>Varies (multiple of 16 bytes)</td><td>32($sp)</td></tr>
+<tr><td>Link Register Save Area</td><td>16 bytes</td><td>16($sp)</td></tr>
+<tr><td>Back Chain Pointer</td><td>16 bytes</td><td>0($sp)</td></tr>
+</table>
+
+<para>
+The back chain pointer points to the back chain pointer of the previous stack frame.  The link register save area holds the link register contents of the function being called, rather than for the current function.  The parameter list is for parameters that this function sends to other function calls, not for its own parameters.  However, unlike the PPE, this is only used if the number of parameters is greater than the number of registers available for parameters (not a very likely scenario).  The local variable space is used as a general storage area for the function, and the register save area is used to save the values of non-volatile registers that the function uses.
+</para>
+
+<para>
+So, in our function, we are using the back chain pointer, the link register save area, and one local variable.  That gives us a frame size of 16 * 3 = 48 bytes.  As we mentioned previously, <literal>LR_OFFSET</literal> is the offset from the end of the stack to the link register save area.  <literal>LCL_NUM_VALUE</literal> is the offset from the end of the stack to our local variable <literal>num</literal>.
+</para>
+
+<para>
+The <emphasis>prologue</emphasis> sets up the stack frame for the function.  In the prologue, the first thing we do is to save the link register.  Since we have not yet defined our own stack frame, the offset is from the end of the calling function's stack frame.  Remember that the link register is stored in the calling function's stack frame, not the function's own stack frame.  Therefore, it makes most sense to save it before reserving the stack space.  This is done using what is called a D-Form store (D-Form is an instruction format).  For more information on common instruction formats for loading and storing, see <ulink url="http://www-128.ibm.com/developerworks/library/l-powasm2.html">this article on PowerPC instruction formats</ulink> (the SPU formats follow the PPU formats fairly closely).  The code for the store instruction is <literal>stqd $lr, LR_OFFSET($sp)</literal>.  <literal>stqd</literal> stands for "store quadword D-Form".  D-Form instructions take a register as the first operand, which is the register to be stored or loaded into, and a combination of a constant and a register as the second operand.  The constant gets added to the register to compute the address to use for loading or storing.  The other popular formats are the X-Form, which takes two registers which are added together, or the A-Form, which can hold a constant or a constant relative offset address.  So in this instruction, <literal>$sp</literal> is the stack pointer (it's an alias for <literal>$1</literal>).  The expression <literal>LR_OFFSET($sp)</literal> calculates the value of <literal>LR_OFFSET</literal> plus <literal>$sp</literal> and uses it as the destination address.  So this instruction stores the link register (which holds the return address) into the proper location in the calling function's stack frame.
+</para>
+
+<para>  
+Next, the current stack frame pointer is stored as the back pointer for the next stack frame, even though we haven't established the stack frame yet (this is done through negative offsets).  The SPU does not have an atomic store/update instruction like the PPU, so in order to make sure that the back pointers are always consistent, storing the back pointer must be done <emphasis>before</emphasis> the stack pointer is moved.  Finally, the stack pointer is moved to reserve all the needed stack space using the instruction <literal>ai $sp, $sp, -FRAME_SIZE</literal>.  <literal>ai</literal> stands for "add immediate", and it adds an immediate-mode value to a register and stores it back into a register.  It adds together the register in the second operand with the constant in the third operand, and stores the result in the register specified in the first operand.  Most instructions follow a similar format, with the register that holds the result specified in the first operand.
+</para>
+
+<para>
+The "add immediate" instruction, it should be noted, is a vector operation.  Remember that the SPU registers are 128 bits wide, but our value is only 32 bits long.  The register is treated logically as multiple values, which are operated on all-at-once.  The "add immediate" instruction actually treats the register as four separate 32-bit values, each of which have <literal>-FRAME_SIZE</literal> added to them, and then they are all stored back into the destination register.  The preferred value size on the SPU is a 32 bit word, but others are supported, including bytes, halfwords, and doublewords.  If the size of the operand is not specified in the instruction, that means either that the size doesn't matter (as in logical instructions, for instance) or that it is using a 32-bit value size.  Bytes are indicated by including the letter <literal>b</literal> in the instruction, halfwords have an <literal>h</literal>, and doublewords have a <literal>d</literal>, though doublewords are usually only used in floating-point instructions (most often a <literal>d</literal> in an instruction refers to the D-Form of addressing, not a doubleword).  But in our case we only care about the first word of the register.  The other values simply do not matter in the ABI.
+</para>
+
+<para>
+Next, we will copy the first parameter to a local variable with <literal>stqd $3, LCL_NUM_VALUE($sp)</literal>.  We need to do this because our parameter will get clobbered on the recursive function call, and we will need access to it afterwards.
+</para>
+
+<para>
+Next, we will do an immediate-mode compare of register 3 with the number 0 and store the result in register 4 with <literal>ceqi $4, $3, 0</literal>.  Note that with the PPU (and most processors for that matter), there is a special-purpose register to hold condition results.  However, with the SPU, the results are stored in a general-purpose register - register 4 in this case.  Remember, this is a vector processor.  So we are not actually comparing register 3 with the number 0.  Instead, we are comparing each word of register 3 with the number 0.  So we actually have four answers, even though we only care about one of them.  The result is stored in the following way: if the condition for the word is true, then all of the bits on the destination word will be set; if the condition for the word is false, then all of the bits on the destination word will be unset.  So for this instruction there will be four results, with each one being either all ones or all zeroes, depending on the results of the comparison.
+</para>
+
+<para>
+The next instruction is <literal>brnz $4, case_zero</literal>.  <literal>brnz</literal> stands for "branch relative if not zero".  Remember, register 4 is the result of the previous comparison, so this is checking the previous compare result for zero or not-zero.  The result register will be non-zero (i.e., true, all bits set to one) if the previous test for zero was true.  Note that the previous two instructions could have been conflated into one instruction (<literal>brz $3, case_zero</literal>) since we were just testing for zero, but I separated them out into two instructions so that you can better see how compares and branches work in the general case.
+</para>
+
+<para>
+What happens if some of the comparisons have a result of true and others false?  Since we are dealing with four 32-bit values rather than one 128-bit value, we could have different results for the different values.  So if the results are different do we branch or do we not?  It turns out that several SPU instructions deal with only one of the register's values.  In these cases, the value that is used is the one in the register's <emphasis>preferred slot</emphasis>.  For 64-bit values it is the first half of the register, for 32-bit values the preferred slot is the first word of the register; for 16-bit values the preferred slot is the second halfword of the register; and for 8-bit values the preferred slot is the fourth byte of the register.  Basically, the first word is the preferred word, and then the other alignments are on the least-significant byte or halfword of that word.  When doing conditional branching, passing values to functions, returning a value from a function, and several other scenarios, the value in the preferred slot is the one that matters.  In our case, we are to assume that the value passed in the function is in the register's preferred slot.  And, if you look at the alignment of <literal>number</literal> in the <literal>.data</literal> section, you can see that this will be loaded into the preferred slot.  Therefore, the branch will occur appropriately, as long as the value is in the preferred slot of the register.
+</para>
+
+<para>
+Now let's assume that the number we are working with in register 3 is not zero.  This means that we need to do a recursive step.  The recursive C code is <literal>return num * factorial(num - 1)</literal>.  The innermost computation requires us decrementing <literal>num</literal> and passing it as a parameter to the next invocation of <literal>factorial</literal>.  <literal>num</literal> is already in register 3, so we just need to decrement it.  So we will do an immediate-mode add like this: <literal>ai $3, $3, -1</literal>.  Now we just need to invoke the next <literal>factorial</literal>.  To call a function according to the SPU ABI, all you need to do is put the parameters into registers, and then call <literal>brsl $lr, function_name</literal>.  In our case, the first and only parameter is already loaded into register 3.  So, we issue a <literal>brsl $lr, factorial</literal>.  As we mentioned before, <literal>brsl</literal> stands for "branch relative set link".  The destination address is encoded as a relative address, the return address will be stored in the preferred slot of the specified register, and control will go to the destination address, which in this case is back to the beginning of the <literal>factorial</literal> function.
+</para>
+<para>
+When control comes back to this point, the factorial result should be in register 3.  Now we want to multiply this result by the current value under consideration.  Therefore, we have to load it back in because it was clobbered in the function call.  <literal>lqd</literal> stands for "load quadword D-Form".  The first operand is the destination register and the second is the D-Form address to load.  So <literal>lqd $5, LCL_NUM_VALUE($sp)</literal> will pull read the value that we saved on the stack earlier into register 5.
+</para>
+<para>
+Now we need to multiply register 3 and register 5.  This is done with the <literal>mpyu</literal> instruction (multiply unsigned).  <literal>mpyu$3, $3, $5</literal> multiplies register 3 with register 5 and stores the result in the first register listed, register 3.  Now, the integer multiply instructions on the SPU are somewhat problematic, especially signed multiplication (using the <literal>mpy</literal> instruction).  The problem is that the result of a multiply instruction can be twice as long as its operands.  The result of multiplying two 32-bit values is actually a 64-bit value!  If it did this, then the destination register would have to be twice as large as the source register.  In order to combat the problem, multiplication instructions only use the least-significant 16 bits of every thirty-two bit value so that the result will fit in the full 32-bit register.  So, while the multiply treats the source registers as 32 bits wide, it only uses 16 bits of them.  So, your value may be truncated if it is longer than 32 bits.  And, if it is a signed multiply, the sign could even change on truncation!  Therefore, to execute multiply instructions successfully, the source values need to be 16 bits wide, but stored in a 32-bit register (it doesn't matter for the multiplication if it is sign-extended to the rest of the 32 bits or not).  This limits greatly the possible range of our factorial function.  Note that floating-point multiplication doesn't have these issues.
+</para>
+<para>
+So now we have the result, and it is in register 3, which is where it needs to be for the return value.  All that is left to do is to restore the previous stack frame and return.  So we simply need to move the stack pointer by adding the stack frame size to the stack pointer using <literal>ai $sp, $sp, FRAME_SIZE</literal>.  We then restore the link register using <literal>lqd $lr, LR_OFFSET($sp)</literal>.  Finally, <literal>bi $lr</literal> ("branch indirect") branches to the address specified in the link register (the return address), thus returning from the function.
+</para>
+<para>
+The base case (what to do if the function's parameter is zero) is much easier.  The result of factorial(0) is 1, so we simply load in the number one into register 3 using <literal>il $3, 1</literal>.  Then we restore the stack frame and return.  However, since the base case doesn't call any other functions, we don't need to load the link register from the stack frame - the value is still there.
+</para>
+<para>
+And that's how the function works!  Just note that writing deeply-recursive functions on the SPE is problematic because there is no stack overflow protection on the SPE, and the local store is small to begin with. 
+</para>
+</sect1>
+
+
+<sect1>
+<title>Non-aligned Loads and Stores</title>
+
+<para>
+Because the SPU is focused on vector, not scalar processing, it only is able to load and store 16 bytes at a time (the size of a register) from local store locations which are aligned on 16 byte boundaries.  Therefore, you cannot just load a word from, say, memory location 12.  In order to get that word, you would need to load a quadword from memory location 0, and then shift the bits so that the value you want is in the preferred slot.  The original quadword must be loaded, the appropriate value inserted into the right location in the quadword, and then the result stored back.  Because of these issues, it is usually advisable to store all data aligned to 16 bytes.  To load a value which crosses a 16-byte boundary is even more difficult, as you would actually have to load it into two registers, shift them, and then mask and combine them.  Storing such values is even more difficult, so it is best to never use values that cross 16-byte boundaries.
+</para>
+
+<para>
+The loading and storing technique we will discuss, while it will allow us to use data that is not aligned to 16-byte boundaries, will require that the data be <emphasis>naturally aligned</emphasis> in order to prevent it from crossing the 16-byte boundary.  That means that words will be 4-byte aligned, halfwords will be 2-byte aligned, and bytes don't have to be aligned at all.  
+</para>
+
+<para>
+Doing an unaligned load requires two or three instructions, depending on the size of the data.  The reason for this is that if you are loading a single value, you probably want it in the preferred slot of the register.  The first instruction does the load and the second instruction rotates the value so that the requested address is at the beginning of the register.  Then, if the data is smaller than a word, a shift is needed to move it away from the beginning into the preferred slot (if it is a word or a doubleword, the beginning of the register <emphasis>is</emphasis> the preferred slot).  Here is the code for a byte load, which takes an address in the preferred slot of register 3 and uses it to load a byte into the preferred slot of register 4:
+</para>
+
+<example>
+<title>Load from Non-Aligned Memory</title>	
+<programlisting>
+###Load byte unaligned address $3 into preferred slot of register $4###
+
+#Loads from nearest quadword boundary
+lqd $4, 0($3)
+#Rotate value to the beginning of the register
+rotqby $4, $4, $3
+#Rotate value to the preferred slot (-3 for bytes, -2 for halfwords, and nothing for words or doublewords)
+rotqbyi $4, $4, -3
+</programlisting>
+</example>
+
+<para>
+Remember, the <literal>lqd</literal> instruction only loads from 16-byte boundaries.  It will therefore ignore the 4 least significant bits during the load, and just load an aligned quadword from memory.  Therefore, for arbitrary addresses, we have no idea where in the loaded quadword the value we wanted is. The <literal>rotqby</literal> instruction, "rotate (left) quadword by bytes", uses the address you loaded from to indicate how far to rotate the register.  It only uses the least 4 significant bits of the address in the register (the ones ignored by the load) to determine how far to rotate. This will always be the number of bytes it needs to shift left to move the address specified to the beginning of the register.  Finally, for bytes, the preferred slot is <emphasis>not</emphasis> at the beginning of the register, but three bytes to the right.  So the instruction <literal>rotqbyi</literal> we will do a shift using an immediate-mode value to shift by.  Word- and doubleword-sized transfers do not need this last instruction, because their preferred slot is at the beginning of the register anyway.  At the end of this, register 4 has the final value, with the byte shifted into the preferred slot.  
+</para>
+
+<para>
+Storing is more difficult.  Here is the code to store a byte that is in the preferred slot of register $4 into the address specified by register $3:
+</para>
+
+<example>
+<title>Store to Non-Aligned Address</title>
+<programlisting>
+###Store preferred byte slot $4 into unaligned address $3
+
+#Load the data into a temporary register
+lqd $5, 0($3)
+#Generate the controls for a byte insertion
+cbd $6, 0($3)
+#Shuffle the data in
+shufb $7, $4, $5, $6
+#Store it back
+stqd $7, 0($3)
+</programlisting>
+</example>
+
+<para>
+To understand this cryptic-looking sequence, we need to again keep in mind that the SPU only does loads and stores a quadword at a time, on quadword-aligned addresses.  Therefore, if we want to store only one byte, if we tried to do it directly on an unaligned address, it would both go into the wrong location and clobber the remaining bytes in the quadword.  To avoid this, we need to first load the quadword from memory, insert the value into the appropriate byte in the quadword, and then store it back.  The hard part is inserting it into the proper location based only on the address.  Thankfully, there are two instructions to help out, <literal>cbd</literal> ("generate control for byte insertion") and <literal>shufb</literal> ("shuffle bytes").  The <literal>cbd</literal> instruction takes an address, and generates a control word that can be used by <literal>shufb</literal> to insert a byte at the proper location in the quadword for that address.  <literal>cbd $6, 0($3)</literal> uses the address in register 3 to generate the control quadword, and then stores it in register 6.  The instruction <literal>shufb $7, $4, $5, $6</literal> uses the control quadword in register 6 to generate a new value into register 7 which consists of the original quadword that was in memory (now in register 5) and a byte from register 4 in the preferred slot, and stores the result in register 7.  Once the byte is shuffled in, the value is stored back into memory.
+</para>
+
+<para>
+To illustrate the technique, we're going to write a function that takes the address of an ASCII character, loads it, converts it to uppercase, and stores it back.  We are going to put the function <literal>convert_to_upper</literal> in a separate file than the <literal>main</literal> function so that we can reuse it in another program later on as well. Here is the code for the <literal>main</literal> function (save it as <literal>convert_main.s</literal>):
+</para>
+
+<example>
+<title>Uppercase Conversion Program Start</title>
+<programlisting>
+.data
+
+string_start:
+.ascii "We will convert the following letter, "
+letter_to_convert:
+.ascii "q"
+remaining:
+.ascii ", to uppercase\n\0"
+
+.text
+.global main
+.type main, @function
+
+main:
+	.equ MAIN_FRAME_SIZE, 32
+	.equ LR_OFFSET, 16
+	#PROLOGUE
+	stqd $lr, LR_OFFSET($sp)
+	stqd $sp, -MAIN_FRAME_SIZE($sp)
+	ai $sp, $sp, -MAIN_FRAME_SIZE
+
+	#MAIN FUNCTION
+	ila $3, letter_to_convert
+	brsl $lr, convert_to_upper
+	ila $3, string_start
+	brsl $lr, printf
+
+	#EPILOGUE
+	ai $sp, $sp, MAIN_FRAME_SIZE
+	lqd $lr, LR_OFFSET($sp)
+	bi $lr
+</programlisting>
+</example>
+
+<para>
+Now enter the function that actually does the uppercase conversion (enter as <literal>convert_to_upper.s</literal>):
+</para>
+
+<example>
+<title>Function to Convert to Uppercase</title>
+<programlisting>
+.text
+.global convert_to_upper
+.type convert_to_upper, @function
+convert_to_upper:
+	#Register usage
+	# $3 - parameter 1 -- address of byte to be converted
+	# $4 - byte value to be converted
+	# $5 - $4 greater than 'a' - 1?
+	# $6 - $4 greater than 'z'?
+	# $7 - $4 less than or equal to 'z'?
+	# $8 - $4 between 'a' and 'z' (inclusive)?
+	# $9 through $12 - temporary storage for final store
+	# $13 - conversion factor
+
+	#address of letter stored in unaligned address in $3
+	#UNALIGNED LOAD
+	lqd $4, 0($3)
+	rotqby $4, $4, $3
+	rotqbyi $4, $4, -3
+
+	#IS IN RANGE 'a'-'z'?
+	cgtbi $5, $4, 'a' - 1
+	cgtbi $6, $4, 'z'
+	nand $7, $6, $6
+	and $8, $5, $7
+	#Mask out irrelevant bits
+	andi $8, $8, 255
+	#Skip uppercase conversion and store if $4 is not lowercase (based on $8)
+	brz $8, end_convert
+
+is_lowercase:
+	#Perform Conversion
+	il $13, 'a' - 'A'
+	absdb $4, $4, $13
+
+	#Unaligned Store
+	lqd $9, 0($3)
+	cbd $10, 0($3)
+	shufb $11, $4, $9, $10
+	stqd $11, 0($3)
+
+end_convert:
+	#no stack frame, no return value, just return
+	bi $lr
+</programlisting>
+</example>
+
+<para>
+To compile and run, perform the following commands:
+</para>
+
+<programlisting>
+spu-gcc convert_main.s convert_to_upper.s -o convert
+./convert
+</programlisting>
+
+<para>
+The <literal>main</literal> function doesn't function too different than from before, so we won't discuss it here.  Note, however, that it is passing the <emphasis>address</emphasis> of the letter to <literal>convert_to_upper</literal>, not the letter itself.
+</para>
+
+<para>
+The <literal>convert_to_upper</literal> function takes the address of an arbitrary character, converts it to upper-case, and then stores it back and returns nothing.  It never calls another function, so it doesn't need a stack frame.
+</para>
+
+<para>
+The first thing the function does is an unaligned load as described previously into register 4.   It then checks to see if the byte is in the range <literal>a</literal> through <literal>z</literal>.  It does that by comparing if it is greater than <literal>'a' - 1</literal>, and then seeing if it is greater than <literal>'z'</literal>.  We did not do a "less than" comparison, <emphasis>because they aren't available on the SPU!</emphasis>  SPUs only have comparisons for "greater than" and "equal to".  Therefore, if we want to do a "less than or equal to" comparison, we must do a "greater than" comparison and then do a "not" on it, which is performed using the <literal>nand</literal> instruction with both source arguments being the same register.  We then combine the comparisons using the <literal>and</literal> instruction (note that we could have combined all the logical instructions into one with an <literal>xor</literal>, but the code would have been much less clear).  Finally, because the branch instructions only operate on halfword or word values, we have to mask out the non-relevant portions of the register (we didn't have to do that in the factorial example because we were dealing with a full word).  
+</para>
+
+<para>
+If the bits in the preferred slot of register 8 are all set to false, we skip to the end of the function.  If they are true, we perform the conversion.  The only byte-oriented arithmetic function on the SPU is <literal>absdb</literal>, "absolute difference of bytes," which gives the absolute value of the difference between two operands.  We use that, combined with the difference between the lowercase and uppercase values, to perform the conversion.  Finally, we perform an unaligned store.  Since we did not call any functions or use any local storage, we did not need a stack frame at all, so we can now just exit through the link register.
+</para>
+
+</sect1>
+
+
+</chapter>

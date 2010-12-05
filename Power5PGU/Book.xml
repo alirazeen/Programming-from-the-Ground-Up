@@ -1,0 +1,111 @@
+<?xml version="1.0"?>
+<!DOCTYPE book PUBLIC "-//OASIS//DTD DocBook XML V4.3.0//EN" "/sw/share/xml/dtd/docbookx/4.4.0/docbookx.dtd" [
+<!ENTITY book-intro-chapter SYSTEM "BookIntroChapter.xml">
+<!ENTITY index SYSTEM "index.xml">   
+<!ENTITY ppu-addressing-modes-chapter SYSTEM "AddressingModes.xml">
+<!ENTITY ppu-assembly-intro-chapter SYSTEM "AssemblyIntro.xml">
+<!ENTITY ppu-branch-processor-chapter SYSTEM "BranchProcessor.xml">
+<!ENTITY ps3-introduction-chapter SYSTEM "PS3Introduction.xml">
+<!ENTITY ppu-abi-chapter SYSTEM "PowerPCABI.xml">
+<!ENTITY spu-c-language-chapter SYSTEM "SPUCLanguage.xml">
+<!ENTITY spu-introduction-chapter SYSTEM "SPUIntroduction.xml">
+<!ENTITY spu-abi-chapter SYSTEM "SPUABI.xml">
+<!ENTITY spu-communication-chapter SYSTEM "SPUCommunication.xml">
+<!ENTITY spu-multibuffering-chapter SYSTEM "SPUMultibuffering.xml">
+<!ENTITY spu-optimization-chapter SYSTEM "SPUOptimization.xml">
+<!ENTITY ascii-appendix SYSTEM "AsciiAp.xml">
+<!ENTITY gdb-appendix SYSTEM "GDBAp.xml">
+<!ENTITY syscall-appendix SYSTEM "SyscallAp.xml">
+<!ENTITY spe-instructions-appendix SYSTEM "SPEInstructionsAp.xml">
+<!ENTITY ppe-instructions-appendix SYSTEM "PPEInstructionsAp.xml">
+]>
+<book>
+<!-- FIXME - need a chapter on memory management - probably at the end of the PPE chaper -->
+<!-- FIXME - need to talk about in-order vs out-of-order processors -->
+<bookinfo>
+<title>How to Program the Playstation 3 (And Other Cell BE Systems) Under Linux</title>
+<author>
+<firstname>Jonathan</firstname>
+<surname>Bartlett</surname>
+</author>
+<copyright><year>2007</year><holder>Jonathan Bartlett</holder></copyright> 
+<legalnotice>
+<para>
+FIXME - Stuff here.
+</para>
+</legalnotice>
+
+<legalnotice>
+<para>
+ISBN - FIXME
+</para>
+
+<para>
+Published by Bartlett Publishing in Broken Arrow, Oklahom
+</para>
+
+<para>
+Library of Congress Control Number: FIXME
+</para>
+
+<para>
+Bartlett Publishing Cataloging-in-Publication Data
+<!-- FIXME
+<mediaobject>
+<imageobject>
+<imagedata fileref="cip.png" format="PNG" />
+</imageobject>
+</mediaobject>
+-->
+</para>
+</legalnotice>            
+
+
+<legalnotice>
+<para>
+This book is not a reference book, it is an introductory book.  It
+is therefore not suitable by itself to learn how to professionally
+program, as some details may have been left out
+to make the learning process smoother.  The point of the book is to
+help the student understand how computer programming
+works on the hardware platform, not to be a reference to the subject.  Reference information about particular hardware can be obtained by the manufacturer.
+</para>
+</legalnotice>               
+</bookinfo>
+<part>
+<title>The Playstation 3 and the Cell Broadband Engine</title>
+&book-intro-chapter;
+&ps3-introduction-chapter;
+</part>
+<part>
+<title>Programming the Power Processing Element</title>
+&ppu-assembly-intro-chapter;
+&ppu-addressing-modes-chapter;
+&ppu-branch-processor-chapter;
+&ppu-abi-chapter;
+<!-- need to talk about differences between PPE and other Power Processors, especially PPE-specific instructions, EIB-based instructions, and in-order vs out-of-order processing -->
+<!-- Could probably put a chapter on VMX here -->
+</part>
+<part>
+<title>Programming the Synergistic Processing Element</title>
+&spu-introduction-chapter;
+&spu-abi-chapter;
+&spu-communication-chapter;
+&spu-optimization-chapter;
+&spu-c-language-chapter;
+&spu-multibuffering-chapter;
+<!-- Could use some info/examples on shufb instruction -->
+<!-- Could probably use a chapter on Cell Makefiles -->
+<!-- Talk about plugins somewhere -->
+<!-- libSPE2 intro -->
+</part>
+&ascii-appendix;
+&ppe-instructions-appendix;
+&spe-instructions-appendix;
+<!--
+&syscall-appendix;
+&gdb-appendix;
+-->
+&index;
+
+</book>

@@ -1,0 +1,1145 @@
+<?xml version="1.0"?>
+<!DOCTYPE chapter PUBLIC "-//OASIS//DTD DocBook XML V4.1.2//EN">
+<chapter>
+<title>Recursion and Provably Correct Programs</title>
+
+<para>
+In this article we are going to tackle recursive programming patterns and examine how
+they can be used to write provably correct programs.  Recursion is not an often-used tool because it is thought to be slow and to waste space.  However,
+as we will see in this article, there are several techniques that can be 
+used to minimize or eliminate these problems.  
+Examples will be given in Scheme and C.
+</para>
+
+<sect1>
+<title>Why Use Recursion?</title>
+
+<para>
+For new computer science students, recursive programming is often difficult.
+Recursive thinking is difficult because it almost seems like
+circular reasoning.  Further, when we give instructions to other people, we rarely
+direct them recursively.  Therefore, directing a computer recursively is
+at first unintuitive.
+</para>
+
+<para>
+For those of you who really are new to computer programming, here's what
+recursion is: recursion occurs when a function calls itself directly
+or indirectly.  The classic example of recursive programming involves computing
+factorials.  The factorial of a number is that number times all of the
+numbers below it up to and including 1.  For example, <literal>factorial(5)</literal>
+is the same as <literal>5*4*3*2*1</literal>, and  <literal>factorial(3)</literal>
+is <literal>3*2*1</literal>.  An interesting property of a factorial is that
+the factorial of a number is equal to the starting number multiplied by 
+the factorial of the number immediately below it.  For example, <literal>factorial(5)</literal> is the same
+as <literal>5 * factorial(4)</literal>.  You could almost write the 
+factorial function as simply this:
+</para>
+
+<example>
+<title>First try at factorial function</title>
+<programlisting>
+int factorial(int n)
+{
+	return n * factorial(n - 1);
+}
+</programlisting>
+</example>
+
+<para>
+The problem with this function, however, is that it would run forever
+because there is no place where it stops.  The function would continually call <literal>factorial</literal>.  There is nothing to stop it when it hits
+zero, so it would continue calling factorial on zero and the negative 
+numbers.  Therefore, our function needs a condition to tell it
+when to stop.  In the case of a factorial, factorials of numbers less
+than 1 don't make any sense.  Therefore, we stop at the number 1
+and return the factorial of 1 (which is 1).  Therefore, the real
+factorial function will look like this:
+</para>
+
+<example>
+<title>Actual factorial function</title>
+<programlisting>
+int factorial(int n)
+{
+	if(n == 1)
+	{
+		return 1;
+	}
+	else
+	{
+		return n * factorial(n - 1);
+	}
+}
+</programlisting>
+</example>
+
+<para>
+As you can see, as long as the initial value is above zero, this
+function will terminate.  The stopping point is called the
+<emphasis>base case</emphasis>.  A base case is the bottom point of a
+recursive program where the operation is so trivial as to be able to
+return an answer directly.  All recursive programs must have at least
+one base case and must guarantee that they will hit one
+eventually.  Otherwise the program would run forever or until the program ran
+out of memory or stack space.
+</para>
+
+<!--
+NOTE - REMOVING QUICKSORT BECAUSE IT IS TOO COMPLICATED
+<para>
+Let's look at one more recursive example - the quicksort.  In the 
+quicksort, the program chooses from the data a <emphasis>pivot</emphasis>
+value.  It then compares all of the elements in the list to the pivot, 
+dividing it into two groups: those above and those below.  It then calls
+quicksort on both sublists and attaches the results together.  Let's look
+at pseudo-code for the quicksort:
+</para>
+
+example
+<title>Quicksort pseudo-code</title>
+<programlisting>
+Algorithm Quicksort (list L)
+	Is the list zero or one elements long?
+		If yes, then return an empty list
+	Otherwise:
+		Choose element X from L at random
+		Divide L into two lists:
+			A - elements below X
+			B - elements above X
+		Join together the following:
+			Quicksort(A) + X + Quicksort(B)
+		Return the result
+</programlisting>
+/example
+
+<para>
+This algorithm continually divides the list into pieces and does a partial
+sort.  Note that in the join, if the left list is in order, the right
+list is in order, and there are no overlapping elements, the result must 
+be a sorted list.  Well, we verified that there were no overlapping elements
+by sorting the list members based on their relationship to X.  Then, we
+called Quicksort on the divided elements. Now, the interesting thing
+about Quicksort is that it will continually divide the list until it is
+either zero or one element large.  We know that a list of zero or one elements
+is already sorted.  Therefore, we can guarantee that Quicksort always
+returns a sorted list.
+</para>
+-->
+
+<para>
+Every recursive program follows the same basic sequence of steps:
+</para>
+
+<orderedlist>
+<listitem><para>Initialize the algorithm.   Recursive programs often need a seed value to start with.  This is accomplished either by using a parameter passed to the function or by providing a gateway function that is nonrecursive, but sets up the seed values for the recursive calculation.</para></listitem>
+<listitem><para>Check to see whether the current value(s) being processed match the base case.  If so, process and return the value.</para></listitem>
+<listitem><para>Redefine the answer in terms of a smaller or simpler sub-problem or sub-problems.</para></listitem>
+<listitem><para>Run the algorithm on the sub-problem.</para></listitem>
+<listitem><para>Combine the results in the formulation of the answer.</para></listitem>
+<listitem><para>Return the result.</para></listitem>
+</orderedlist>
+
+<para>
+Sometimes, in writing recursive programs, finding the simpler sub-problem can
+be tricky.  Dealing with <emphasis>inductively-defined data sets</emphasis>, however, makes finding the sub-problem considerably easier.  An inductively-defined data set is a data structure
+defined in terms of itself - this is called an inductive definition.  For example, linked lists are defined
+in terms of themselves.  A linked list consists of a node structure that contains two members -
+the data it is holding and a pointer to another node structure (or NULL, to terminate the list).
+Because the node structure contains a pointer to a node structure within it, it is said to be
+defined inductively.  Inductive data is fairly easy to write recursive procedures on.  Notice how, like our recursive 
+programs, the definition of a linked list also contains a base case - the NULL pointer.  Since a NULL pointer terminates a list, we can also use the 
+NULL pointer condition as a base case for many of our recursive functions on
+linked lists.
+</para>
+
+<para>
+Let's look at a few examples of recursive functions on linked lists.  Suppose we have
+a list of numbers, and we want to sum them.  Let's go through each step of the recursive
+sequence and identify how it applies to to our summation function:
+</para>
+
+<orderedlist>
+<listitem><para>Initialize the algorithm.  This algorithm's seed value is the first node to process, and is passed as a parameter to the function.</para></listitem>
+<listitem><para>Check for the base case. The program needs to check and see if the current node is the NULL list.  If so, we return 0, because the sum of all members of an empty list is zero.</para></listitem>
+<listitem><para>Redefine the answer in terms of a simpler sub-problem.  We can define the answer as the sum of the rest of the list plus the contents of the current node.  To determine the sum of the rest of the list, we call this function again with the next node.</para></listitem>
+<listitem><para>Combine the results.  After the recursive call completes, we add the value of the current node to the results of the recursive call.</para></listitem>
+</orderedlist>
+
+<para>
+Here is the pseudo-code and the real code for the function:
+</para>
+
+<example>
+<title>Pseudo-code for the sum_list program</title>
+<programlisting>
+function sum_list(list l)
+	is l null?
+		yes - the sum of an empty list is 0 - return that
+	data = head of list l
+	rest_of_list = rest of list l
+	the sum of the list is:
+		data + sum_list(rest_of_list)
+</programlisting>
+</example>
+
+<para>
+The pseudo-code for this program matches almost identically its Scheme implementation.
+</para>
+
+<example>
+<title>Scheme code for the sum-list program</title>
+<programlisting>
+(define sum-list (lambda (l)
+	(if (null? l)
+		0
+		(let (
+				(data (car l))
+				(rest-of-list (cdr l)))
+			(+ data (sum-list rest-of-list))))))
+</programlisting>
+</example>
+
+<para>
+For this easy example, the C version is just as simple.
+</para>
+
+<example>
+<title>C code for the sum_list program</title>
+<programlisting>
+int sum_list(struct list_node *l)
+{
+	if(l == NULL)
+		return 0;
+
+	return 	l.data + sum_list(l.next);
+}
+</programlisting>
+</example>
+
+<para>
+You may be thinking that you know how write this program to perform faster 
+or better without recursion.  We will get to the speed and space issues
+of recursion later on.  In the meantime, let's look at two more examples
+first.
+</para>
+
+<para>
+Suppose we have a list of strings and want to see whether a certain string is contained
+in that list.  The way to break this down into a simpler problem is to look again at the 
+individual nodes.  The sub-problem is this: "Is the search string the same as the one in <emphasis>this
+node</emphasis>?"  If so, you have your solution, and if not you are one step closer.  What's
+the base case?  There are two: 1) if the current node has the string, that's a base case (returning 
+true), and 2) if the list is empty, then that's a base case (returning false).  This program won't always hit the first base case, because it won't always have the string being searched for.  However, we can be certain that if the program don't hit the first base case it will at least hit the second one when it gets to the end of the list.
+</para>
+
+<example>
+<title>Scheme code for determining if a given list contains a given string</title>
+<programlisting>
+(define is-in-list 
+	(lambda (the-list the-string)
+		;;Check for base case of "list empty"
+		(if (null? the-list)
+			#f
+			;;Check for base case of "found item"
+			(if (equal? the-string (car the-list))
+				#t
+				;;Run the algorithm on a smaller problem
+				(is-in-list (cdr the-list) the-string)))))
+</programlisting>
+</example>
+
+<para>
+This recursive function works fine, but it has one main shortcoming - every 
+iteration of the recursion will be passing the <emphasis>same value</emphasis> for
+<literal>the-string</literal>.  Passing the extra parameter can increase the overhead of the function call.  However, we can set up a closure at the beginning of the function to keep the string from having to be passed on each call:
+</para>
+
+<example>
+<title>Scheme program for finding a string using a closure</title>
+<programlisting>
+(define is-in-list2
+	(lambda (the-list the-string)
+		(letrec ( 
+				(recurse (lambda (internal-list)
+						(if (null? internal-list)
+							#f
+							(if (equal? the-string (car internal-list))
+								#t
+								(recurse (cdr internal-list)))))))
+			(recurse the-list))))
+</programlisting>
+</example>
+
+<para>
+This version of the program is a little harder to follow.  It defines a closure 
+called <literal>recurse</literal> that can be called with only one parameter,
+rather than two.  (For more information on closures, see 
+<ulink url="http://www.ibm.com/developerworks/library/l-highfunc.html">this 
+earlier article on closures</ulink>.)  We don't need to pass in <literal>the-string</literal> to <literal>recurse</literal> because it is already in the parent environment and does not change from call to call.  Because <literal>recurse</literal>
+is defined <emphasis>within</emphasis> the <literal>is-in-list2</literal> function, it can see all of the
+currently defined variables, so they don't need to be re-passed.  This shaves off one variable being
+passed at each iteration.  Using a closure instead of passing the parameter doesn't make a lot of difference in this trivial example, but it can
+save a lot of typing, a lot of errors, and a lot of overhead involved in passing variables in more complex  functions.
+</para>
+
+<para>
+The standard way of making recursive closures as used in this example is a bit tedious.  This same pattern of creating a recursive closure
+using <literal>letrec</literal> and then calling it with an initial seed value occurs over and over again in recursive programming.  In order to make programming recursive patterns easier, Scheme contains a shortcut called the <emphasis>named let</emphasis>.
+This construct looks a lot like a <literal>let</literal>, except that the whole block is given a name so that it can be called as
+a recursive closure.  The parameters of the function built with the named let are defined like the variables in a regular let, and the initial seed values are set the same way initial variable values are set in a normal let.  From there, each successive recursive call uses the parameters as new values.
+</para>
+
+<para>
+Named let's are fairly confusing to talk about, so take a look at the following code, and compare it to the code above.
+</para>
+
+<example>
+<title>Named let example</title>
+<programlisting>
+(define is-in-list2
+	(lambda (the-list the-string)
+		;;Named Let
+		;;This let block defines a function called "recurse" that is th
+		;;body of this let.  The function's parameters are the same as
+		;;the variables listed in the let.
+		(let recurse
+			;;internal-list is the first and only parameter.  The
+			;;first time through the block it will be primed with
+			;;"the-list" and subsequent calls to "recurse" will
+			;;give it whatever value is passed to "recurse"
+			( (internal-list the-list) )
+			;;Body of function/named let block
+			(if (null? internal-list)
+				#f
+				(if (equal? the-string (car internal-list))
+					#t
+					;;Call recursive function with the
+					;;rest of the list
+					(recurse (cdr internal-list)))))))
+</programlisting>
+</example>
+
+
+<para>
+The "named let" cuts down considerably on the amount of typing and mistakes made when writing
+recursive functions.  If you are still having trouble with the concept of named lets,
+I suggest that you thoroughly compare every line in the above two programs, and look at some of the documents in the <ulink url="#resources">Resources</ulink>
+section of this article.
+</para>
+
+<para>
+Our next example of a recursive function on lists will be a little more complicated.
+It will check to see whether or not a list is in ascending order.  If the list is in ascending order, the function 
+will return <literal>#t</literal>; otherwise, it will return <literal>#f</literal>.
+This program will be a little different because in addition to having to examine the
+current value, we will also have to remember the last value processed.
+</para>
+
+<para>
+The first item on the list will have to be processed differently than the other items, because it won't have
+any items preceding it.  For the remaining items, we will need to pass the previously
+examined data item in the function call.  The function looks like this:
+</para>
+
+<example>
+<title>Scheme program to determine whether a list is in ascending order</title>
+<programlisting>
+(define is-ascending
+	(lambda (the-list)
+		;;First, Initialize the algorithm.  To do this we
+		;;need to get the first value, if it exists, and
+		;;use it as a seed to the recursive function
+		(if (null? the-list)
+			#t
+			(let is-ascending-recurse
+				( 
+					(previous-item (car the-list))
+					(remaining-items (cdr the-list))
+				)
+				;;Base case #1 - end of list
+				(if (null? remaining-items)
+					#t
+					(if (&lt; previous-item (car remaining-items))
+						;;Recursive case, check the rest of the list
+						(is-ascending-recurse (car remaining-items) (cdr remaining-items))
+						;;Base case #2 - not in ascending order
+						#f))))))
+</programlisting>
+</example>
+
+<para>
+This program begins by first checking a boundary condition - whether or not the list is empty.  An empty list is considered ascending.
+It then seeds the recursive function with the first item on the list, and the remaining list.
+Next, the base case is checked.  The only way to get to the end of the list is if everything so far
+has been in order.  Therefore, if the list is empty, the list is in ascending order.  Otherwise,
+we check the current item.  If the current item is in ascending order, we then have only a subset
+of the problem left to solve - whether or not the rest of the list is in ascending order.  So
+we recurse with the rest of the list and try it again.
+</para>
+
+<para>
+Notice in this function how we maintained state through function calls by passing program forward.
+Previously we had just passed the remainder of the list each time.  In this function, though, 
+we needed to know a little bit more about the state of the computation.  The result of the
+present computation depended on the partial results before it.  Therefore, in each successive
+recursive call, we pass those results forward.  This is a common pattern for more complex
+recursive procedures.
+</para>
+
+</sect1>
+
+<sect1>
+<title>Correct and Provably Correct Programs</title>
+
+<para>
+Bugs are a part of the daily life of every programmer.  Even the smallest loops and the
+tiniest function calls can have bugs in them.  What's more, while most programmers can 
+examine code and test code for bugs, they do not know how to prove that their programs
+perform the way they think they will.  Therefore, we are first going to examine some
+of the common sources of bugs, and then show how to make programs which are provably
+correct.
+</para>
+
+<para>
+One of the primary sources of bugs in computer programs is variables changing states. 
+You might think that the programmer would be keenly aware of exactly how and
+when a variable changes state.  This is sometimes true in simple loops, but usually not in complex ones.  Usually, within loops, there are several ways
+that a given variable can change state.  For example, if you have a complicated 
+<literal>if</literal> statement, some branches may modify one variable while others
+modify other variables.  On top of that, the order is usually important.  However, 
+being absolutely sure that the sequence coded is the correct order for all cases is 
+difficult.  Often, fixing one bug for one case will introduce other bugs in other 
+cases because of sequencing issues.
+</para>
+
+<para>
+In order to prevent these kinds of errors, we need to be able to:
+</para>
+
+<itemizedlist>
+<listitem><para>Tell by sight how each variable received its present value.</para></listitem>
+<listitem><para>Be certain that no variable is performing double-duty. (Many programmers often use the same variable to store two related, but slightly different, values.)</para></listitem>
+<listitem><para>Be certain that all variables hit the state they are supposed to be in when the loop restarts.  (A common programming error is failure to set new values for loop variables in corner cases that are rarely used and tested.)</para></listitem>
+</itemizedlist>
+
+<para>
+To accomplish these objectives, we need to make only one rule in our 
+programming. <emphasis>Assign a value to a variable only once - and NEVER MODIFY 
+IT</emphasis>.  This rule is blasphemy for many who have been raised on 
+imperative, procedural, and object-oriented
+programming because variable assignment and modification are at the core of these programming techniques!  Yet state changes
+are consistently one of the chief programming errors for imperative programmers.
+</para>
+
+<para>
+So how does a person program without modifying variables?  Let's look at several situations in which variables are often modified and see how we can get by without doing so.
+</para>
+
+<variablelist>
+<varlistentry>
+<term>Reusing a variable</term>
+<listitem><para>Often, a variable is reused for different, but similar, purposes.  For example, sometimes if part of a loop needs an index to the current position in the first half of a loop, and the index immediately before or after for the rest of the loop, many programmers use the same variable for both cases, just incrementing it in the middle.  However, this can easily cause the programmer to confuse the two uses as the program is modified.  To prevent this problem, the best solution is to create two separate variables, and just derive the second from the first the same way you would do so if you were just writing to the same variable.</para></listitem>
+</varlistentry>
+
+<varlistentry>
+<term>Conditional modification of a variable</term>
+<listitem><para>
+This is a subset of the "reusing a variable" problem.
+However, in this case, sometimes we will keep our existing value, and
+sometimes we will want a new value.  Again, we create a new
+variable.  In most languages, we can use the tertiary operator
+<literal>? :</literal> to set the value of the new variable.  For
+example, if we wanted to give our new variable a new value, as long as
+it's not greater than <literal>some_value</literal>, we could write
+<literal>int new_variable = old_variable &gt; some_value ? old variable : new_value;</literal>.  
+</para></listitem>
+</varlistentry>
+
+<varlistentry>
+<term>Loop variables</term>
+<listitem><para>
+We will show the problems and solutions with loop variables later.
+</para></listitem>
+</varlistentry>
+
+</variablelist>
+
+<para>
+Once we have rid ourselves of all variable state changes, we can know that when we first define
+our function, the definition of our function will hold for as long as the variable lasts.  This 
+makes sequencing orders of operations much easier, especially for modifying existing code.
+You don't have to worry about what sequence a variable might have been modified in, and what 
+assumptions were being made about its state at each juncture.  Because a variable cannot change
+state, the full definition of how it is derived is shown right where it is declared!  You never
+have to go searching through code to find the incorrect or misordered state change again!  
+</para>
+
+<para>
+Now, the question is: How do we do loops without assignment?  The answer lies in 
+<emphasis>recursive functions</emphasis>.  This may be surprising, but let's look at the properties of loops and see how
+they compare to recursive functions.
+</para>
+
+<variablelist>
+
+<varlistentry>
+<term>Repetition</term>
+<listitem><para>
+Loops execute the same block of code repeatedly to obtain the result.  Likewise, recursive functions
+execute the same block of code repeatedly to obtain the result.  The difference is that loops signal their intent to 
+repeat by either finishing the block of code or issuing a <literal>continue</literal> command, while
+recursive functions repeat by calling themselves.
+</para></listitem>
+</varlistentry>
+
+<varlistentry>
+<term>Terminating conditions</term>
+<listitem><para>
+In order to guarantee that it will terminate, a loop must have one or more conditions that cause
+it to terminate, and it must be guaranteed at some point to hit one of these conditions.  Likewise, recursive functions require a
+base case that causes the function to stop recursing. 
+</para></listitem>
+</varlistentry>
+
+<varlistentry>
+<term>State</term>
+<listitem><para>
+Loops have a current state that is updated as the loop progresses.  Recursive functions have a 
+current state that is passed as parameters.
+</para></listitem>
+</varlistentry>
+
+</variablelist>
+
+<para>
+As you can see, recursive functions and loops have quite a bit in common.  In fact, loops and
+recursive functions are interchangeable.  The difference is that with recursive functions, we
+rarely have to modify any variable. We just pass the new values as
+parameters to the next function call.  This allows us to keep all of the benefits of not having
+an updateable variable, while still having repetitive, stateful behavior.
+</para>
+
+<para>
+Let's take a look at a common loop for printing reports and see how it can convert into a recursive function.
+</para>
+
+<itemizedlist>
+<listitem><para>This loop will print out the page number and page headers at each page break.</para></listitem>
+<listitem><para>We will assume that the report lines are grouped by some numeric criteria and we will pretend there is some total we are keeping track of for these groups.</para></listitem>
+<listitem><para>At the end of each grouping, we will print out the totals for that group.</para></listitem>
+</itemizedlist>
+
+<para>
+For demonstration purposes, we've left out all of the subordinate functions, just assuming they exist and that they perform as expected.  Here is the code for our report printer:
+</para>
+
+<example>
+<title>Report-printing program using a normal loop</title>
+<programlisting>
+void print_report(struct report_line *report_lines, int num_lines)
+{
+	int num_lines_this_page = 0;
+	int page_number = 1;
+	int current_line; /* iterates through the lines */
+	int current_group = 0; /* tells which grouping we are in */
+	int previous_group = 0; /* tells which grouping was here on the last loop */
+	int group_total = 0; /* saves totals for printout at the end of the grouping */
+
+	print_headings(page_number);
+
+	for(current_line = 0; current_line &lt; num_lines; current_line++)
+	{
+		num_lines_this_page++;
+
+		if(num_lines_this_page == LINES_PER_PAGE)
+		{
+			page_number++;
+			page_break();
+			print_headings(page_number);
+		}
+
+		current_group = get_group(report_lines[current_line]);
+		if(current_group != previous_group)
+		{
+			print_totals_for_group(group_total);
+			group_total = 0;
+		}
+
+		print_line(report_lines[current_line]);
+		group_total += get_line_amount(report_lines[current_line]);
+	}
+}
+
+</programlisting>
+</example>
+
+<para>
+Several bugs have been intentionally left in the program.  Try to see if you can spot them.  Because we
+are continually modifying state variables, it is difficult to see whether or not at any given moment
+they are correct.  Here is the same program done recursively:
+</para>
+
+<example>
+<title>Report-printing program using recursion</title>
+<programlisting>
+void print_report(struct report_line *report_lines, int num_lines)
+{
+	int num_lines_this_page = 0;
+	int page_number = 1;
+	int current_line; /* iterates through the lines */
+	int current_group = 0; /* tells which grouping we are in */
+	int previous_group = 0; /* tells which grouping was here on the last loop */
+	int group_total = 0; /* saves totals for printout at the end of the grouping */
+
+
+	/* initialize */	
+	print_headings(page_number);
+
+	/* Seed the values */
+	print_report_i(report_lines, 0, 1, 1, 0, 0, num_lines);
+}
+
+void print_report_i(struct report_line *report_lines, /* our structure */
+	int current_line, /* current index into structure */
+	int num_lines_this_page, /* number of lines we've filled this page */
+	int page_number, 
+	int previous_group, /* used to know when to print totals */
+	int group_total, /* current aggregated total */
+	int num_lines) /* the total number of lines in the structure */
+{
+	if(current_line == num_lines)
+	{
+		return;
+	}
+	else
+	{
+		if(num_lines_this_page == LINES_PER_PAGE)
+		{
+			page_break();
+			print_headings(page_number + 1);
+			print_report_i(
+				report_lines, 
+				current_line, 
+				1, 
+				page_number + 1, 
+				previous_group, 
+				group_total, 
+				num_lines);
+		}
+		else
+		{
+			int current_group = get_group(report_lines[current_line]);
+			if(current_group != previous_group &amp;&amp; previous_group != 0)
+			{
+				print_totals_for_group(group_total);
+				print_report_i(
+					report_lines, 
+					current_line, 
+					num_lines_this_page + 1, 
+					page_number, 
+					current_group, 
+					0, 
+					num_lines);
+			}
+			else
+			{
+				print_line(report_lines[current_line]);
+				print_report_i(
+					report_lines, 
+					current_line + 1, 
+					num_lines_this_page + 1, 
+					page_number, 
+					current_group, 
+					group_total + get_line_amount(report_lines[current_line]), 
+					num_lines);
+			}
+		}
+	}
+}
+</programlisting>
+</example>
+
+<para>
+Notice that there is never a time when the numbers we are using are not
+self-consistent.  Almost anytime you have multiple states changing, you 
+will have several lines during the state change at which the program will
+not have self-consistent numbers.  If you then add a line to your program
+in the middle of such state changes you will have major difficulties if your
+conception of the states of the variables do not match what is really 
+happening.  After several 
+modifications, it is likely that subtle bugs will be introduced because of 
+sequencing and state issues.  In this
+program, all state changes are brought about by re-running the recursive
+function with completely self-consistent data.  
+</para>
+
+<para>
+Because you never change the states of your variables, program proving is much easier. Let's look at a 
+few proofs for properties of the above program.  As a reminder for those
+of you who have not done program proving since college (or perhaps never at
+all), when doing program proving, you are essentially looking for a property 
+of a program (usually designated P) and proving that the property holds
+true.  This is done using <emphasis>axioms</emphasis>, which are assumed 
+truths, and <emphasis>theorems</emphasis> which are statements about the
+program inferred from the axioms.  The goal is to link together axioms and theorems 
+in such as way as to prove property P true.  If a program has more than
+one feature, they are usually proved independently.  Since this program
+has several features, we will show short proofs for a few of them.  
+</para>
+
+<para>
+Since we are doing an informal proof, we will not name the axioms we are using
+nor will we attempt to prove the intermediate theorems used to make the proof
+work.  Hopefully they will be obvious enough that proofs of them will be unnecessary.
+In the proofs, we will refer to the three recursion points of the program
+as R1, R2, and R3, respectively.  All programs will have the implicit
+assumption that <literal>report_lines</literal> is a valid pointer, and that <literal>num_lines</literal>
+accurately reflects the number of lines represented by <literal>report_lines</literal>
+</para>
+
+<sect2>
+<title>Proving Program Termination</title>
+
+<para>
+This proof will verify that for any given set of lines, the program will
+terminate.  This proof will use a common technique for proofs in recursive
+programs called an <emphasis>inductive proof</emphasis>.  An inductive proof
+consists of two parts.  First, you need to prove that property P holds true 
+for a given set of parameters.  Then you prove an induction that says if P 
+holds true for a value of X, then it must hold true for a value of X + 1 (or X - 1, or any sort of stepwise treatment).  This way you can prove property P for
+all numbers sequenced until the one you prove for.
+</para>
+
+<para>
+In this program, we're going to prove that <literal>print_report_i</literal>
+terminates for <literal>current_line == num_lines</literal>, and then show that if
+<literal>print_report_i</literal> terminates for a given <literal>current_line</literal>, it will also terminate for <literal>current_line - 1</literal>, assuming <literal>current_line &gt; 0</literal>.
+</para>
+
+<variablelist>
+
+<varlistentry>
+<term>Assumptions</term>
+<listitem><para>
+We will assume that <literal>num_lines &gt;= current_line</literal> and <literal>LINES_PER_PAGE &gt; 1</literal>.  
+</para></listitem>
+</varlistentry>
+
+<varlistentry>
+<term>Base case proof</term>
+<listitem><para>
+By inspection, we can see that the program immediately terminates when 
+<literal>current_line == num_lines</literal>.
+</para></listitem>
+</varlistentry>
+
+<varlistentry>
+<term>Inductive step proof</term>
+<listitem><para>
+In each iteration of the program, <literal>current_line</literal> either 
+increments by 1 (R3) or stays the same (R1 and R2).  R2 will only occur 
+when the current value of <literal>current_line</literal> is different than 
+the previous value of <literal>current_line</literal>, because 
+<literal>current_group</literal> and <literal>previous_group</literal> are 
+directly derived from it. R1 can only occur by changes in 
+<literal>num_lines_this_page</literal>, which can only result from 
+R2 and R3.  Since R2 can only occur on the basis of R3, and R1 can only occur 
+on the basis of R2 and R3, we can conclude that <literal>current_line</literal>
+must increase, and can only increase monotonically.  Therefore, if some value 
+of <literal>current_line</literal> terminates, then all values before 
+<literal>current_line</literal> will terminate.
+</para></listitem>
+</varlistentry>
+
+</variablelist>
+
+<para>
+We have now proven that given our assumptions, 
+<literal>print_report_i</literal> will terminate.
+</para>
+
+</sect2>
+
+<sect2>
+<title>Proof that page breaks occur after LINES_PER_PAGE lines</title>
+
+<para>
+This program keeps track of where to do page breaks.  Therefore, it is
+worthwhile to prove that the page-breaking mechanism works.  As mentioned
+before, proofs use axioms and theorems to make their case.  Two theorems
+will be developed to show the proof.  If the conditions of the theorems are
+shown to be true, then we can use the theorem to establish the truth of the
+theorem's result for our program.
+</para>
+
+<variablelist>
+
+<varlistentry>
+<term>Assumptions</term>
+<listitem><para>
+The current page already has a page header printed on the first line.
+</para></listitem>
+</varlistentry>
+
+<varlistentry>
+<term>Theorem 1</term>
+<listitem><para>
+Our first theorem that we will use to prove this is that if 
+<literal>num_lines_this_page</literal> is set to the correct starting value
+(condition 1), <literal>num_lines_per_page</literal> increases by 1 for every 
+line printed (condition 2), and <literal>num_lines_per_page</literal> is 
+reset after a page break (condition 3), then 
+<literal>num_lines_this_page</literal> accurately reflects the number of lines
+printed on the page.
+</para></listitem>
+</varlistentry>
+
+<varlistentry>
+<term>Theorem 2</term>
+<listitem><para>
+Our second theorem is that if <literal>num_lines_this_page</literal> accurately
+reflects the number of lines printed (condition 1), and a page break is performed every
+time <literal>num_lines_this_page == LINES_PER_PAGE</literal> (condition 2), then we know
+that our program will do a page break after printing <literal>LINES_PER_PAGE</literal> lines.
+</para></listitem>
+</varlistentry>
+
+<varlistentry>
+<term>Proof</term>
+<listitem><para>
+We are assuming condition 1 of Theorem 1.  This would be obvious from 
+inspection anyway if we assume <literal>print_report_i</literal> was called 
+from <literal>print_report</literal>.
+</para>
+<para>
+Condition 2 can be determined by verifying that each procedure which prints
+a line corresponds to an increase of <literal>num_lines_this_page</literal>.
+Line printing is done (1) When printing group totals, (2) when printing
+individual report lines, and (3) when printing page headings.  By inspection,
+(1) and (2) increase <literal>num_lines_this_page</literal> by 1, and (3) 
+resets <literal>num_lines_this_page</literal> to the appropriate value after a 
+page break/heading print combination (condition 3).  The requirements for 
+Theorem 1 have been met, so we have proved that the program will do a page 
+break after printing <literal>LINES_PER_PAGE</literal> lines.
+</para></listitem>
+</varlistentry>
+</variablelist>
+
+</sect2>
+
+<sect2>
+<title>Proof that every report item line is printed exactly once</title>
+<para>
+We need to verify that the program always prints every line of the report, 
+and never skips a line.  We will show that if <literal>print_report_i</literal>
+prints exactly one line for <literal>current_line == X</literal>, it will also either print exactly one line or 
+terminate on <literal>current_line == X + 1</literal>.  This is our inductive
+step.  However, since we have both a starting and a terminating condition, we
+must prove both of them correct.  Therefore, we must prove the base case that
+<literal>print_report_i</literal> works when <literal>current_line == 0</literal>, and
+that it will <emphasis>only</emphasis> terminate when <literal>current_line == num_lines</literal>.
+</para>
+
+<variablelist>
+<varlistentry>
+<term>Theorem 1</term>
+<listitem><para>
+If <literal>current_line</literal> is only incremented after a <literal>print_line</literal> (condition 1) call, 
+and <literal>print_line</literal> is only called before <literal>current_line</literal> is incremented (condition 2), 
+then for every number that <literal>current_line</literal> passes through a single line will be printed.
+</para></listitem>
+</varlistentry>
+
+<varlistentry>
+<term>Theorem 2</term>
+<listitem><para>
+If theorem 1 is true (condition 1), and <literal>current_line</literal> passes through every number from 0 to 
+<literal>num_lines - 1</literal> (condition 2), and terminates when <literal>current_line == num_lines</literal> 
+(condition 3), then every report item line is printed exactly once.
+</para></listitem>
+</varlistentry>
+
+<varlistentry>
+<term>Proof</term>
+<listitem><para>
+Conditions 1 and 2 of Theorem 1 are true by inspection.  R3 is the only place where <literal>current_line</literal> 
+increases, and it occurs immediately after the only invocation of <literal>print_line</literal>.  Therefore, theorem
+1 is proven, and so is condition 1 of theorem 2.  Conditions 2 and 3 can be proven by induction, and in fact just
+a rehash of the first proof of termination.  We can take our proof of termination to prove conclusively condition 3.
+Condition 2 is true on the basis of that proof and the assumption that <literal>current_line</literal> starts at 0.
+Therefore, we have proven that every line of the report is printed exactly once.
+</para></listitem>
+</varlistentry>
+
+</variablelist>
+
+</sect2>
+
+<sect2>
+<title>Proofs and Recursive Programming</title>
+
+<para>
+These are just some of the proofs that we could do on the program.  
+They can be done much more rigorously, but many of us chose programming
+instead of mathematics because we can't stand the tedium of mathematics 
+nor its notation.
+</para>
+
+<para> 
+Using recursion tremendously simplifies the verification of programs.  It's 
+not that program proofs cannot be done with imperative programs, but that the 
+number of state changes that occur make them unwieldy.  With recursive programs 
+that recurse instead of change state, the number of occasions of state change 
+is small, and they maintain self-consistency by setting all of the recursion
+variables at once.  This does not completely prevent logical errors, but it 
+does eliminate numerous classes of them.  This method of programming using only
+recursion for state changes and repetition is usually termed 
+<emphasis>functional programming</emphasis>.
+</para>
+
+</sect2>
+
+</sect1>
+
+<sect1>
+<title>Tail-Recursive Functions</title>
+
+<para>
+So we've seen how loops and recursive functions are related.  We've seen 
+how we can convert our loops into recursive, non-state-changing functions 
+to achieve a result that is more maintainable and provably correct than
+what we started with.  However, many people worry about the growth of
+stack space with the use of recursive functions.  Indeed, some classes of
+recursive functions will grow the stack space linearly with the number of
+times they are called.  However, for <emphasis>tail-recursive</emphasis>
+functions, which we will look at in this section, stack size remains
+constant no matter how deep the recursion is.
+</para>
+
+<sect2>
+<title>Tail Recursion</title>
+
+<para>
+When we converted our loop to a recursive function, the recursive call
+was the last thing that the function did.  If you evaluate <literal>print_report_i</literal>, you will see that there is nothing further that happens in the function after the recursive call.  It is exhibitting a loop-like behavior.  When loops hit the end of the loop or if they issue a <literal>continue</literal>, then that is the last thing they do in that block of code.  Likewise, when
+<literal>print_report_i</literal>recurses, there is nothing left that it does
+after the point of recursion.
+</para>
+
+<para>
+A function call (recursive or not) that is the last thing a function does is called a <emphasis>tail-call</emphasis>.  Recursion using tail-calls is called <emphasis>tail-recursion</emphasis>.  Let's look at some example function calls to see exactly what is meant by a tail-call:
+</para>
+
+<example>
+<title>Tail-calls and non-tail-calls</title>
+<programlisting>
+int test1()
+{
+	int a = 3;
+	test1(); /* recursive, but not a tail call.  We continue processing in the function after it returns. */
+	a = a + 4;
+	return a;
+}
+
+int test2()
+{
+	int q = 4;;
+	q = q + 5;
+	return q + test1(); /* test1() is not in tail position.
+	                     * There is still more work to be
+	                     * done after test1() returns (like
+	                     * adding q to the result
+	                     */
+}
+
+int test3()
+{
+	int b = 5;
+
+	b = b + 2;
+
+	return test1();  /* This is a tail-call.  The return value
+	                  * of test1() is used as the return value
+	                  * for this function.
+	                  */
+}
+
+int test4()
+{
+	test3(); /* not in tail position */
+	test3(); /* not in tail position */
+	return test3(); /* in tail position */
+}
+</programlisting>
+</example>
+
+<para>
+As you can see, <emphasis>no other operation</emphasis> can be performed on 
+the result of the tail-called function before it is passed back in order
+for the call to truly be a tail-call.
+</para>
+
+<para>
+Notice that since there is nothing left to do in the function, the actual stack frame for the function is not needed either.  The only
+issue is that many programming languages and compilers don't know how to get rid of unused stack frames.  If we could find a way to remove these unneeded stack frames, our 
+tail-recursive functions would run in a constant stack size.
+</para>
+
+</sect2>
+
+<sect2>
+<title>Tail-call Optimization</title>
+
+<para>
+The idea of removing stack frames after tail-calls is called <emphasis>tail-call optimization</emphasis>.
+So what is the optimization?  We can answer that question by asking some other questions. After the function
+in tail position is called, which of our local variables will be in use?
+None.  What processing will be done to the return value?  None.  Which 
+parameters passed to the function will be used?  None.  It seems
+that once control is passed to the tail-called function, nothing in the stack
+is useful anymore.  The function's stack frame, while it still takes up space,
+is actually useless at this point.  Therefore, the tail-call optimization
+is to <emphasis>overwrite</emphasis> the current stack frame with the next
+one when making a function call in tail position, while keeping the original
+return address.
+</para>
+
+<para>
+Essentially what we are doing is surgery on the stack.  The activation
+record isn't needed anymore, so we are going to cut it out and redirect
+the tail-called function back to the function that called us.  This means
+that we have to manually rewrite the stack to fake a return address so that
+the tail-called function will return directly to our parent. 
+</para>
+
+<para>
+For those who actually like to mess with the low-level stuff, here
+is an assembly language template for an optimized tail-call:
+</para>
+
+<example>
+<title>Assembly language template for tail-calls</title>
+<programlisting>
+;;Unoptimized tail-call
+
+my_function:
+	...
+	...
+
+	;PUSH ARGUMENTS FOR the_function HERE
+
+	call the_function
+
+	;results are already in %eax so we can just return
+	movl %ebp, %esp
+	popl %ebp
+	ret
+
+;;Optimized tail-call
+optimized_function:
+	...
+	...
+
+	;save the old return address
+	movl 4(%ebp), %eax
+
+	;save old %ebp
+	movl (%ebp), %ecx 
+
+	;Clear stack activation record (assuming no unknowns like 
+	;variable-size argument lists)
+	addl $(SIZE_OF_PARAMETERS + 8), %ebp ;(8 is old %ebp + return address))
+
+	;restore the stack to where it was before the function call
+	movl %ebp, %esp
+
+	;Push arguments onto the stack here
+
+	;push return address
+	pushl %eax
+
+	;set ebp to old ebp
+	movl %ecx, %ebp
+
+	;Execute the function 
+	jmp the_function
+</programlisting>
+</example>
+
+<para>
+As you can see, tail-calls take a few more instructions,
+but they can save quite a bit of memory.  There are a few restrictions
+for using them, however:
+</para>
+
+<itemizedlist>
+<listitem><para>The calling function must not depend on the parameter list
+still being on the stack when your function returns to it.</para></listitem>
+<listitem><para>The calling function must not care where the stack pointer is currently pointing. (Of course, it can assume that it is past its local variables.)  This means that you cannot compile using <literal>-fomit-frame-pointer</literal>, and that any registers that you save on the stack should be done in reference to <literal>%ebp</literal> instead of <literal>%esp</literal>.</para></listitem>
+<listitem><para>There can be no variable-length argument lists.</para></listitem>
+</itemizedlist>
+
+<para>
+When a function calls itself in a tail-call, the method is even easier.
+We simply move the new values for the parameters on top of the old ones and 
+do a jump to the point in the function right after local variables are saved 
+on the stack.  Because we are just jumping into the same function, the 
+return address and old <literal>%ebp</literal> will be the same, and the 
+stack size won't change.  Therefore, the only thing we need to do before the 
+jump is replace the old parameters with the new ones.
+</para>
+
+<para>
+So, for the price of at most a few instructions, your program can have 
+the provability of a functional program and the speed and memory 
+characteristics of an imperative one.  The only problem is that right now 
+very few compilers implement tail-call optimizations.  Scheme implementations 
+are required to implement the optimization, and many other functional language 
+implementations do so, too.  Note, however, that because functional languages 
+sometimes use the stack much differently than imperative languages (or do not 
+use the stack at all), their methods of implementing tail-call optimizations 
+can be quite different.
+</para>
+
+<para>
+Recent versions of GCC also include some tail-recursion optimizations 
+under limited circumstances.  For example, the 
+<literal>print_report_i</literal> function described earlier compiled with
+tail-call optimization using -O2 on GCC 3.4.
+</para>
+
+</sect2>
+
+</sect1>
+
+<sect1>
+<title>Conclusion</title>
+<para>
+Recursion is a great art, enabling programs that are easy to verify correctness without sacrificing performance.  However,
+they require the programmer to look at programming in a new light.  Imperative programming is often more natural and 
+intuitive of a starting place for new programmers, which is why most programming introductions focus on imperative 
+languages and methods.  However, as programs become more complex, recursive programming gives the programmer a better
+way of organizing code in a way that is both maintainable and logically consistent.
+</para>
+
+</sect1>
+
+<!-- RESOURCES
+
+<resource-list>
+
+<ul>
+<li>A great intro to programming using functional programming, including many recursive techniques, is <a href="http://www.htdp.org/">How to Design Programs</a>.</li>
+<li>A more difficult introduction, but which goes into much more depth, is <a href="http://mitpress.mit.edu/sicp/full-text/book/book.html">Structure and Interpretation of Computer Programs</a>.
+<li>Understanding the issues of recursive programs with respect to the stack require <a href="http://www.cafeshops.com/bartlettpublish.8640017">some knowledge of how assembly language works</a>.</li>
+<li><a href="http://personal.vsnl.com/erwin/recursion.htm">More examples of recursion in action</a>.
+<li>For those of you who haven't done proofs in a while or at all, <a href="http://zimmer.csufresno.edu/~larryc/proofs/proofs.html">here is a good introduction to proof-writing</a>.</li>
+<li>If you need another explanation of proof by induction, check out <a href="http://www.geocities.com/Athens/Delphi/5136/Induction.html">this tutorial on mathematical induction</a>.
+<li>You probably didn't know that <a href="http://patterns.projects.cis.ksu.edu/documentation/patterns.shtml">proofs have patterns, too</a>.</li>
+<li>
+</ul>
+
+-->
+	
+</chapter>

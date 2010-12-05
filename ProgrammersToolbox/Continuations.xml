@@ -1,0 +1,815 @@
+<?xml version="1.0" ?>
+<!DOCTYPE chapter PUBLIC "-//OASIS//DTD DocBook XML V4.1.2//EN">
+<chapter>
+<title>Continuations and Advanced Flow Control</title>
+
+<para>
+Flow control is usually straightforward.  Sequence, selection, iteration.  Many programmers, having been raised on these primary control structures, have 
+a difficult time seeing what other kinds of flow control might be necessary.  This article will introduce continuations, and teach you to think about 
+flow control in radically new ways.
+</para>
+
+<sect1>
+<title>Advanced Flow Control Examples</title>
+
+<sect2>
+<title>Non-local Exits</title>
+
+<para>
+The first advanced flow control technique is one that you probably already know: non-local exits.   There are several types of non-local exits, each of which can be divided into two categories: structured and unstructured.  Unstructured non-local exits are those things that your computer science teacher warned you to never do.  Things like the dreaded "goto".  The truth is, if used wisely and judiciously unstructured non-local exits can be very useful.  They can especially affect the readability of programs with complicated flow-control.  If complex flow-control is not naturally nested, imposing a nested structure on it can make it less readable, not more.  However, I assume that you all are familiar with how gotos work, and will leave the discussion of its pro's and con's to the links in the references section.
+</para>
+
+<para>
+You are probably also familiar with the most popular structured method of non-local exits: exceptions.  For those of you who have been programming C, Fortran, and Cobol for the last 20 years and have never come up for air, I'll give you a brief introduction to exceptions.
+</para>
+
+<para>
+An exception is a way of signalling and localizing an error within code.  Usually when an error occurs, you want the error to be handled, and for the rest of the work to not continue unless you give the explicit go-ahead.  Let's use as an example some simple database code in Java:
+</para>
+
+<example>
+<title>Simple Database Code Example</title>
+<programlisting>
+//NOTE -- this code will not compile, but that's on purpose.
+import java.sql.*;
+	...
+	public static int testdbcode(Connection conn) {
+		//Prepare the statement
+		PreparedStatement s = conn.prepareStatement("select id from test_table where name = ?");
+		//Set the parameters
+		s.setString(1, "fred");
+		//Run the query
+		ResultSet rs = s.executeQuery()
+		//Move to the first result row
+		rs.next();
+		//Get the answer (first result parameter)
+		int id = rs.getInt(1);
+
+		return id;
+	}
+	...
+</programlisting>
+</example>
+
+<para>
+The problem with this code is that there is no error handling, and when dealing with databases or any other external entity, errors can happen at nearly every point.  And, if you get an error anywhere within the code, it doesn't make much sense to continue on.  For example, if there is an error preparing my query, there isn't much use setting parameters, running the query, or retrieving the answer.  The query is pretty much toast after the first error.  Therefore, in Java, they have exceptions which allow you to enclose a block of code, so that the whole block of code is skipped on the first error.  To do this in Java we would rewrite the code as follows:
+</para>
+
+<example>
+<title>Simple Database Function with Exception Handling</title>
+<programlisting>
+import java.sql.*;
+	...
+	public static int testdbcode(Connection conn) {
+		try {
+			//Prepare the statement
+			PreparedStatement s = conn.prepareStatement("select id from test_table where name = ?");
+			//Set the parameters
+			s.setString(1, "fred");
+			//Run the query
+			ResultSet rs = s.executeQuery()
+			//Move to the first result row
+			rs.next();
+			//Get the answer (first result parameter)
+			int id = rs.getInt(1);
+
+			return id;
+		} catch (Exception e) {
+			//Put error handling code here
+			return -1;
+		}
+	}
+	...
+</programlisting>
+</example>
+
+<para>
+The code within the <literal>try</literal> block will execute until it finishes or one statement results in an error condition.  If an error is 
+<emphasis>thrown</emphasis>, all of the rest of the code in the <literal>try</literal> block is skipped, and the <literal>catch</literal> block
+is executed, with the variable <literal>e</literal> holding the exception information.  In Java, the errors that are thrown are full classes themselves,
+so any amount of information can be placed into the exception.  In fact, multiple <literal>catch</literal> blocks can be created, each of which handle a 
+specific excpetion class.
+</para>
+
+<para>
+In the code example above, we dealt with system-generated exceptions.  However, application-level exceptions can be created and handled just the same.  The
+application can signal an exception at any time using the <literal>throw</literal> keyword.  For example, let's say in the code above that if we get an
+ID number of 0 that it is an application-level exception.  We could do the following:
+</para>
+
+<example>
+<title>Simple Database Example with Application-level Exception Throwing</title>
+<programlisting>
+import java.sql.*;
+	...
+	public static int testdbcode(Connection conn) {
+		try {
+			//Prepare the statement
+			PreparedStatement s = conn.prepareStatement("select id from test_table where name = ?");
+			//Set the parameters
+			s.setString(1, "fred");
+			//Run the query
+			ResultSet rs = s.executeQuery()
+			//Move to the first result row
+			rs.next();
+			//Get the answer (first result parameter)
+			int id = rs.getInt(1);
+
+			//Check for application exception
+			if(id == 0) {
+				//Signal the exception
+				//Assume that InvalidUserIDException is defined elsewhere
+				throw new InvalidUserIDException();
+			}
+
+			return id;
+		} catch (InvalidUserIDException e) {
+			//Specialized error handling here
+			return -1;
+		} catch (Exception e) {
+			//Handle all other errors here
+			return -1;
+		}
+	}
+	...
+</programlisting>
+</example>
+
+<para>
+In addition, there is no reason that the code to handle the exception has to reside in the function itself.  The <literal>try</literal> and <literal>catch</literal> statements can be in any containing function as well.  The exception-handling mechanism will unwind the stack until it reaches an appropriate exception handler, and at that point run the exception-handling code.  This ability to perform structured non-local exits can make writing code a lot easier, as well as its maintenance, as the error handling can in some cases be wholly separated from the actual code doing the work.  Of course, it is almost deceptively easy.  Exception handling has several major gotchas that are outside of the scope of this article, but the references at the end will give you some guidance on these.
+</para>
+
+</sect2>
+
+<sect2>
+<title>Generating Functions</title>
+
+<para>
+Another type of advanced flow control structure is a <emphasis>generator</emphasis>.  Generators are functions that can generate a set of values, and return them one at a time as the function is called, and is able to "bookmark" its place in the current function to make programming easier.
+</para>
+
+<para>
+For example, let's say that you wanted to have a function that would return a sequence of numbers starting with 1 and continually increasing every time you called it.  While this wouldn't be hard to do with closures or even a global variable, you can also do it with generators very easily.  Here is an example with Python's generator implementation:
+</para>
+
+<example>
+<title>Simple Python Generator Program</title>
+<programlisting>
+#This is our generator function
+def sequence(start):
+	current = start
+	while true:
+		yield current
+		current = current + 1
+
+generator_func = sequence(1)  #Create a new sequence generator starting at 1
+print generator_func.next()   #prints 1
+print generator_func.next()   #prints 2
+print generator_func.next()   #prints 3
+</programlisting>
+</example>
+
+<para>
+As you can see, the generator goes back to where it left off in the function each time, and then continues on until it hits a "yield" statement.  This sort of "bookmarking" and "resume from bookmark" feature is not standard in most languages, but they are very, very useful, and can make complex logic much more readable, and easier to program.
+</para>
+
+</sect2>
+
+<sect2>
+<title>Logic Programming</title>
+
+<para>
+Another type of advanced flow-control is logic programming, which is heavily used by programming languages such as Prolog.  In prolog, you give the computer a set of definitions, and it "magically" answers queries and sets values for you.  For example, let's look at the following Prolog program:
+</para>
+
+<example>
+<title>Simple Logic Program in Prolog</title>
+<programlisting>
+likes(john,sports).            %this asserts that john likes sports
+likes(john,food).              %this asserts that john likes food
+likes(amy,X) :- likes(john,X). %amy likes X if john likes X (capital letters signify variables in prolog)
+likes(brad,food).              %brad likes food
+likes(brad,television).        %brad likes television
+?- likes(amy,X), likes(brad,X), write(X).  %query for a value that both amy and brad like, and write it out.
+</programlisting>
+</example>
+
+<para>
+The way that this works is that Prolog will create lists of what john and brad like.  It also says that the rule for what amy likes is anything that john likes.  Then, when you execute the query it first finds an answer to the question "what does amy like".  The answer to this question is "anything that john likes".  It then goes through john's list of things that he likes and pulls out the first item, which is sports.  It then goes to the next proposition, which is that brad must like the same thing that amy liked (denoted as X in this expression).  However, sports isn't in brad's list of items.  Therefore, Prolog then <emphasis>backtracks</emphasis> and finds a new value for X from amy's list.  The next value is food.  It then goes and checks to see if food is in brad's list.  It is, so it goes on to the next step, which is to write out what value was found for X.
+</para>
+
+<para>
+This sort of programming is called <emphasis>logic programming</emphasis>, because it allows the programmer to state goals in terms of logical relationships, and lets the computer do all of the legwork to find appropriate solutions to these logical relationships.  The most important part of it, for our purposes, is the unique flow control that this sets up -- backtracking.  This means that at any point in the computation, if an appropriate value is not found in a particular variable, or a particular relationship among a group of variables is incorrect, the program can "back up" and assign a new value.  This sort of programming simplifies a huge number of problem sets, especially in the area of smart systems.
+</para>
+
+</sect2>
+
+</sect1>
+
+<sect1>
+<title>Continuations -- the Flow Control Utility Knife</title>
+
+<para>
+So far we have looked at three types of advanced flow control -- nonlocal exits, generating functions, and backtracking.  What do they have in common?  Basically, each of them does a certain amount of gymnastics with the program stack and the instruction pointer.  With nonlocal exits, the stack frame containing the exit blocks is bookmarked, as well as the exit handling block.  When you invoke the nonlocal exit, the stack is unwound to the bookmarked point, and the instruction pointer is moved to the handler block.  With generating functions, the variable containing the generator contained a pointer to the stack frame of the generator function as well as to the point in the function where the generator last left off.  In backtracking, a bookmark is kept where the assignment took place, and the flow-control is reverted to that location if a computation fails and backtracking is necessary.
+</para>
+
+<para>
+You could call these bookmarks "continue points" -- the place where you will continue to if the advanced flow control structure is invoked.  Or, more precisely, they are known as <emphasis>continuations</emphasis>.  In fact, all of these control structures can be implemented using a single flow-control function, <literal>call-with-current-continuation</literal>.
+</para>
+
+<para>
+<literal>call-with-current-continuation</literal> is a function in the Scheme programming language which takes the current stack frame and instruction pointer and packages it up into a single callable entity (the <emphasis>continuation</emphasis>) and calls another function with the continuation as its only parameter.  The continuation is a callable entity which takes one parameter, and that parameter is then returned to the point where the continuation is created.  That may sound confusing -- and it is.  Let's look at a few examples of it's use to get a feel for how it works.
+</para>
+
+<para>
+First, let's show a quick example of using a continuation:
+</para>
+
+<example>
+<title>First Continuation Example</title>
+<programlisting>
+(display 
+  ;;Calling the continuation will return the parameter as the return value to
+  ;;the call-with-current-continuation function.  This is the "bookmarked" location
+  (call-with-current-continuation 
+    ;;Continuations variables are often written with a "k" or "kont" to remind
+    ;;yourself that it is a continuation.  In this example, "kont" will be
+    ;;the continuation.  It is a function, that, when called, will return its
+    ;;parameter to the bookmarked location.
+    (lambda (kont)
+       ;;For this example, we will simply run the continuation.  This returns
+       ;;the number 5 to the "bookmarked" lcoation
+       (kont 5))))
+(newline)
+</programlisting>
+</example>
+
+<para>
+The preceding program simply displays the number 5.  Note that <emphasis>calling the continuation with a single parameter returns that value to the bookmarked location</emphasis>.  Now let's look at a slightly more complex example.  In this case, we are going to use the continuation as an early exit.  This will be a very contrived example, but it should illustrate the point.  For this program, we will square every number in a list.  However, if there are <emphasis>any</emphasis> non-numbers in the list, instead of returning a list, it will simply return the symbole <literal>*error*</literal>.
+</para>
+
+<example>
+<title>Early Exit from Error Conditions with a Continuation</title>
+<programlisting>
+(define a '(1 2 3 4 5))
+(define b '(1 b 2 e f))
+(define (square-list the-list)
+  ;;Bookmark here
+  (call-with-current-continuation
+    ;;early-exit-k will return us to our bookmark
+    (lambda (early-exit-k)
+      ;;run the procedure 
+      (map
+        (lambda (x)
+          ;;Check to see if it is a number
+          (if (number? x)
+              ;;yes it is, perform the multiplication
+              (* x x)
+              ;;no it isn't, exit _now_ with the value *error*
+              (early-exit-k '*error*)))
+        the-list))))
+;;This will square the list
+(display (square-list a))
+(newline)
+;;This will give the error
+(display (square-list b))
+(newline)
+</programlisting>
+</example>
+
+<para>
+Hopefully that example will give you a hint as to how we will use continuations to implement exceptions.
+</para>
+
+<para>
+The next example will demonstrate another unusual property of continuations -- the fact that they have <emphasis>unlimited extent</emphasis>.  This means that, unlike exceptions, continuations can be activated outside of their originating code block.  When you make a "bookmark" with a continuation, it forces that stack frame to remain alive for as long as the continuation value is alive.  Therefore, even if you
+return from the block that created the continuation, if you return it, calling the continuation will restore the previously active stack frame and continue on from there.  
+</para>
+
+<para>
+The following example will save a continuation to a global variable, and then upon activation of the continuation, will re-activate the the original stack frame.
+</para>
+
+<example>
+<title>Re-activating a Stack Frame with Continuations</title>
+<programlisting>
+;;Global variable for the continuation
+(define k-global #f)
+
+;;We are using let* instead of let so that we can guarantee 
+;;the evaluation order
+(let* (
+       (my-number 3)
+       (k 
+         ;;set bookmark here
+         (call-with-current-continuation
+           ;;The continuation will be stored in "kont"
+           (lambda (kont)
+             ;;return the continuation 
+             kont))))
+
+     ;;We are using "my-number" to show that the old stack
+     ;;frame is being saved.  When we revisit the continuation
+     ;;the second time, the value will remain changed.
+     (display "The value of my-number is: ")
+     (display my-number)
+     (newline)
+     (set! my-number (+ my-number 1))
+
+     ;;Save the continuation in a global variable.
+     (set! k-global k))
+
+;;Is "kontinuation" a continuation?
+(if (procedure? k-global)
+    (begin
+       (display "This is the first run, k-global is a continuation")
+       (newline)
+       ;;Send "4" to the continuation which goes to the bookmark
+       ;;which will assign it to "k"
+       (k-global 4))
+     (begin
+       ;;This occurs on the second run
+       (display "This is the second run, k-global is not a continuation, it is ")
+       (display k-global)
+       (newline)))
+</programlisting>
+</example>
+
+<para>
+With these features, you can create interesting procedures and macros which emulate all sorts of other features.
+</para>
+
+<sect2>
+<title>Exceptions with Continuations</title>
+<para>
+Let's take a look at what exceptions look like:
+</para>
+
+<programlisting>
+try {
+     //Code here which might generate an exception
+} catch(SQLException e) { //catch a specific exception
+     //Error handling code
+} catch(Exception e) { //catch a general exception
+     //Error handling code
+}
+
+//remaining code here
+</programlisting>
+
+<para>
+So, what we basically need to do is create a macro which establishes:
+</para>
+<itemizedlist>
+<listitem><para>The error-handling code block</para></listitem>
+<listitem><para>The location of the remaining code</para></listitem>
+<listitem><para>The code which is run</para></listitem>
+</itemizedlist>
+<para>
+So, the <emphasis>result</emphasis> of the macro expansion will need to look something like this:
+</para>
+
+<example>
+<title>The Desired Expansion of a Hypothetical Exception Macro</title>
+<programlisting>
+;;This establishes the throw function as globally availabe, but displays an
+;;error message if used without being in a try block.
+(define throw (lambda (x) (display "No try clause is active!") (newline)))
+
+(let* (
+       ;Save the old containing try block
+       (old-throw throw)
+       ;we are saving the results in retval because we still have to clean up after ourselves
+       ;before we can exit
+       (retval (call-with-current-continuation
+                 ;The exception will use this continuation to get back to the remaining code
+                 (lambda (k-exit-to-remaining-code)
+                   (let (
+                         ;This defines the exit handler
+                         (error-handler 
+                           (lambda (exception)
+                              (k-exit-to-remaining-code 
+                                 ;;error-handling code here
+                                 ))))
+                        ;This sets our error handler to be the official "throw" function
+                        (set! throw error-handler)
+                        ;;Regular code here
+                        ;;You can throw an exception by doing:
+                        (throw 'test-exception))))))
+
+     ;Reinstate old try block
+     (set! throw old-throw)
+
+     ;Return the result
+     retval)
+</programlisting>
+</example>
+
+<para>
+This sets up the nesting so that <literal>throw</literal> will always refer to the innermost <literal>try</literal> block.  Now that we know what we want the code to look like, we can write a macro to take care of setting up all of the infrastructure.
+</para>
+
+<example>
+<title>Macro to Generate Exception Code</title>
+<programlisting>
+;;This establishes the throw function
+(define throw (lambda (x) (display "No try clause is active!") (newline)))
+
+;;establishes syntax for a "try" block
+(define-syntax try
+  (lambda (x)
+    (syntax-case x (catch)
+      (
+       (try expression (catch exception exception-handler-expression))
+       (syntax
+         (let* (
+                (old-throw throw)
+                (retval
+                  (call-with-current-continuation
+                    (lambda (k-exit)
+                      (let (
+                            (error-handler
+                              (lambda (exception)
+                                (k-exit exception-handler-expression))))
+                           (set! throw error-handler)
+                           expression)))))
+               (set! throw old-throw)
+               retval))))))
+
+;;Short test suite
+
+;Function which throws an error
+(define (test-function)
+  (throw 'ERROR))
+
+;Function which does not throw an error
+(define (test-function-2)
+  (display "No error is generated.")
+  (newline))
+
+;Test out our try block
+(try (test-function) (catch e (begin (display "Exception!  e is: ") (display e) (newline))))
+(try (test-function-2) (catch e (begin (display "Exception!  e is: ") (display e) (newline))))
+</programlisting>
+</example>
+          
+<para>
+While we have covered most of our bases, there are still a few problems remaining.  The problem comes in mixing continuations.  For example, if, in addition to uses continuations for exceptions, you also used them for other sorts of early-exit logic, you would then have a problem.  Let's look at the following code:
+</para>
+
+<example>
+<title>Bad Interactions of Continuations</title>
+<programlisting>
+;;Uses previously defined try/catch macro
+(try
+  (begin
+    (call-with-current-continuation
+      (lambda (kont)
+        (try 
+          (kont 'value)  ;;jumps out of the continuation, but also skips resetting
+                         ;;the active continuation
+          (catch e (begin (display "Interior excpetion handler.  Exception e is: ") (display e) (newline))))))
+    ;;Because we didn't exit out through the try block in a normal fashion, this will actually send us 
+    ;;_back_ to the interior catch block the first time it is called!
+    (throw 'ERROR))
+  (catch e (begin (display "Exterior exception handler.  Exception e is: ") (display e) (newline))))
+</programlisting>
+</example>
+
+<para>
+As you can see, the ability to jump around so freely can cause some difficulties in bookkeeping.  In order to alleviate these problems, Scheme has a special procedure called <literal>dynamic-wind</literal>.  <literal>dynamic-wind</literal>  gives programmers the ability to detect when a continuation jumps past a given stack frame.  This can be used to reset the stack when a continuation jumps back and forth. <literal>dynamic-wind</literal> takes three arguments, each of which is a zero-argument procedure.  The first one is the procedure to run anytime you enter a stack frame.  The next one is the actual procedure to run.  The final one is the procedure to run anytime you leave the stack frame.  The following example gives a short trace of how <literal>dynamic-wind</literal> works:
+</para> 
+
+<example>
+<title>Example using dynamic-wind</title>
+<programlisting>
+(let (
+      (k-var (call-with-current-continuation
+               (lambda (kont)
+                 (dynamic-wind
+                   (lambda () (display "Entering frame") (newline))
+                   (lambda ()
+                     (begin
+                       (display "Running")
+                       (newline)
+                       (call-with-current-continuation
+                         (lambda (inner-kont)
+                           ;;Exit across the dynamic-wind boundary,
+                           ;;Saving the current continuation
+                           (kont inner-kont)))))
+                   (lambda () (display "Leaving frame") (newline)))))))
+  (if (procedure? k-var)
+      (k-var 'the-value)
+      (begin
+        (display k-var)
+        (newline))))
+</programlisting>
+</example> 
+
+<para>
+First, it creates an outer continuation.  Then, it enters the stack frame, calling the "entering" procedure.  Then it runs a procedure, producing a new continuation inside the <literal>dynamic-wind</literal>.  This continuation is then returned across to the original continuation.  However, because it crosses the <literal>dynamic-wind</literal> line, the "leaving" procedure is executed.  Then, the inner continuation is executed again, which moves control across the <literal>dynamic-wind</literal> again, which calls the "entering" procedure again.  It then returns back across the <literal>dynamic-wind</literal>, calling the "leaving" procedure again.
+</para>
+
+<para>
+It's kind of a confusing call sequence, but it makes sense if you think of <literal>dynamic-wind</literal> as more-or-less of a "guard" line against far-reaching continuations.  In order for flow control to pass across the "guard" line (whether by continuation or by normal control flow), the appropriate procedure must be executed for clean-up (either "entering" or "exitting" depending on the direction).
+</para>
+
+<para>
+Using this, we can guard against some problems in our <literal>try</literal> macro.  We can use <literal>dynamic-wind</literal> to reset which try/catch block the code is executing in.  Here is the code:
+</para>
+
+<example>
+<title>Improved Try/Catch with dynamic-wind</title>
+<programlisting>
+;;This establishes the throw function as globally availabe, but displays an
+;;error message if used without being in a try block.
+(define throw (lambda (x) (display "No try clause is active!") (newline)))
+
+;;establishes syntax for a "try" block
+(define-syntax try
+  (lambda (x)
+    (syntax-case x (catch)
+      (
+       (try expression (catch exception exception-handler-expression))
+       (syntax         
+          ;;Exit point using continuation k-exit
+          (call-with-current-continuation
+            (lambda (k-exit)
+              (let (
+                    ;;These are the two exception handlers - the old and the
+                    ;;new.  Dynamic wind sets them up and tears them down 
+                    ;;upon entering and exiting from scope
+                    (old-throw throw)
+                    (error-handler
+                      (lambda (exception)
+                        (k-exit exception-handler-expression))))
+                   (dynamic-wind
+                     ;;Entering scope -- set exception handler
+                     (lambda () (set! throw error-handler))
+                     ;;Actual processing
+                     (lambda () expression)
+                     ;;Exitting scope -- set exception handler to old value
+                     (lambda () (set! throw old-throw)))))))))))
+</programlisting>
+</example>
+
+<para>
+This version is actually shorter, and it satisfies both the original test cases, and the one using continuations.  Also, in case you think we are cheating by adding a new control structure with <literal>dynamic-wind</literal>, Kent Dybvig has shown that <literal>dynamic-wind</literal> can be implemented in terms of <literal>call-with-current-continuation</literal>.  
+</para>
+
+<para>
+We haven't covered all of the places where try/catch might produce unexpected behavior, but this is sufficient for most cases.  We will revisit possible problems later on. 
+</para>
+
+<!-- Exercise 1: extend the above with a "finally" clause.  Should the finally clause be executed when flow jumps out of the current flow of control through non-exception continuations?  Why or why not?  
+     Exercise 2: how might "finally" present difficulties in the faces of arbitrary continuations?
+     Exercise 3: how might the ubiquitous presence of continuations affect the way programs are reasoned about?
+  -->
+
+</sect2>
+
+<sect2>
+<title>Generators using Continuations</title>
+
+<para>
+Generators were previously mentioned as a form of flow control.  Python is the most commonly used language which implements generators.  Let's think about how generators work and how continuations can be used to implement them.
+</para>
+
+<para>
+First of all, a generator is created.  This must necessarily entail the saving of a stack frame via either a continuation or a closure.  Next, you return a value, and bookmark your current position within the function.   This also means that you need to have already bookmarked where you are returning  to. 
+</para>
+
+<para>
+So, our generator has two bookmarks, which are implemented with continuations.  The first bookmark is a variable that is created when the generator is first created.  This will hold the position that the generator function is currently in.  Then, when you run the generator, you also will have a continuation that is the return point in the calling function.  Right before returning, you create a continuation of the current location, and save it for the next invocation.
+</para>
+
+<para>
+Now, let's look at the scheme interface we might want for the Python-style generators:
+</para>
+
+<example>
+<title>Example of using a Python-style generator</title>
+<programlisting>
+(define-syntax generator
+   (syntax-rules ()
+     (
+       (generator (yieldfunc) body ...)
+       (let (
+             (placeholder #f)  ;;placeholder in this function
+             (return-proc #f)  ;;how to get out
+             (finished #f))    ;;whether or not it is finished
+         ;;this is the generator entrance
+         (lambda ()
+           (call-with-current-continuation
+             (lambda (tmp-return-proc)
+               ;;save the way out in "return-proc"
+               (set! return-proc tmp-return-proc)
+               (let (
+                     ;;"yieldfunc" resets the placeholder and returns the value
+                     (yieldfunc 
+                       (lambda (x)
+                         (call-with-current-continuation
+                           (lambda (current-placeholder)
+                             ;;new placeholder
+                             (set! placeholder current-placeholder)
+                             ;;return value
+                             (return-proc x))))))
+
+                 ;;If the generator is done, return a special value
+                 (if finished
+                     'generator-finished
+
+                     ;;If this is the first time, there will not be a 
+                     ;;placeholder established, so we just run the body.  
+                     ;;If there is a placeholder, we resume to that point
+                     (if placeholder
+                       (placeholder 'unspecified)
+                       (let (
+                             (final-value (begin body ...)))
+                         (set! finished #t)
+                         (return-proc final-value))))))))))))
+
+(define sequence-generator
+  ;;Initial parameters
+  (lambda (start end increment)
+    ;;"yield" will be used to generate a single value
+    (generator (yield)
+      ;;Main function body
+      (let loop ((curval start))
+         (if (eqv? curval end)
+             curval
+             (begin
+                ;;yield the value
+                (yield curval)
+                ;;continue on
+                (loop (+ curval increment))))))))
+
+;;Example usage
+(define my-sequence (sequence-generator 1 3 1))
+(display (my-sequence))(newline)
+(display (my-sequence))(newline)
+(display (my-sequence))(newline)
+(display (my-sequence))(newline)
+</programlisting>
+</example>
+
+<para>
+The code is a little difficult to follow.  It becomes even more complex if we add the ability to query whether or not the generator has any more values, or any other state query.  Notice, though, the two generator-wide functions -- one is the procedure to return to the calling program, and the other one is the current location where the generator is executing.  It may seem odd that the return procedure is stored in a generator-wide scoped variable.  However, it needs to be in order for the right version of the variable to be active after the continuation call.  Otherwise, after the first call, it would revert to the version that was active when the placeholder continuation was created.
+</para>
+
+<para>
+We mentioned earlier that there might be problems with our exception-based continuations.  Basically, the question is, if you have a try block when you start a generator, and a try block when you run a generator, and an exception is thrown in the generating function, which catch block is run?  In the implementations we are using, the first catch block would be used.  Is this the most intuitive way for this to happen?  It depends a lot on the individual case.  However, these sorts of continuation/continuation interactions can be problematic because it is not entirely clear what the "appropriate" action should be.  
+</para>
+
+</sect2>
+
+<sect2>
+<title>Backtracking using Continuations</title>
+
+<para>
+Finally, we will look at backtracking.  The interface to our backtracker will be a function called <literal>amb</literal>.  This function will take a list of values.  For each value, <literal>amb</literal> will set up a backtrack-bookmark.  If the current value in the list doesn't work out (signified by calling the <literal>amb:fail</literal> function), the program "backtracks" to the last bookmark, and tries a new value.  We will also define a utility function called <literal>amb:assert</literal> which will signal <literal>amb:fail</literal> if the parameter is not true.  Here is an example of these functions in use:
+</para>
+
+<example>
+<title>Using backtracking in Scheme</title>
+<programlisting>
+(let* (
+      (a (amb 1 2 3 4 5 6 7))
+      (b (amb 5 6 7 8 9 10)))
+  (amb:assert (> a b))
+  (display "a is ") (display a) (newline)
+  (display "b is ") (display b) (newline))
+</programlisting>
+</example>
+
+<para>
+The first time this function runs, it will choose <literal>1</literal> for <literal>a</literal> and <literal>5</literal> for <literal>b</literal>.  Since <literal>a</literal> is not greater than <literal>b</literal>, it will fail, and go back to the last bookmarked backtrack location.  In this case, it will be in the assignment of <literal>b</literal>.  It will then try each value of <literal>b</literal>.  None of them will work, so it will then go and backtrack to the point where <literal>a</literal> is assigned.  It will then try <literal>2</literal> with every value of <literal>b</literal>.  It will continue like this until it finds a value of <literal>a</literal> that is greater than <literal>b</literal>, at which point it will continue on.
+</para>
+
+<para>
+Here is the implementation:
+</para>
+
+<example>
+<title>Implementation of backtracking</title>
+<programlisting>
+;AMB definition
+(define amb:fail '*)
+
+(define amb:initialize-fail
+  (lambda x
+    (set! amb:fail
+      (if (null? x)
+         (lambda () (error "amb tree exhausted!"))
+         (car x)))))
+
+(amb:initialize-fail)
+
+(define amb
+  (lambda alternatives
+    (letrec ( 
+             (amb-internal 
+               ;;"sk" returns the value (success continuation),
+               ;;"alts is the list of values
+	       (lambda (sk alts)
+                 ;;fail if there are no alternatives
+                 (if (null? alts)
+                   (prev-amb-fail)
+                   (begin
+                      (call/cc
+                        ;;"fk" is where to go when an 
+                        ;;alternative fails (failure continuation)
+                        (lambda (fk)
+                          ;;set the failure function to come back here
+                          (set! amb:fail
+                            (lambda ()
+                              (set! amb:fail prev-amb-fail)
+                              (fk 'fail)))
+                          ;;return the first alternative
+                          (sk (car alts))))
+                      ;;We get here after a failure, so we
+                      ;;run the function again using the rest
+                      ;;of the list
+                      (amb-internal sk (cdr alts))))))
+             ;;this is the previous failure function
+             (prev-amb-fail amb:fail))
+      (call/cc
+        ;;bookmark the way to the assignment into "sk"
+        (lambda (sk)
+          ;;go through each alternative
+          (amb-internal sk alternatives)
+          ;;After going through them, note that we have a failure
+          (prev-amb-fail))))))
+
+;;Callilng "amb" without arguments will cause a failure.  This function
+;;just makes it a little more obvious what is supposed to be happening.
+(define amb:assert-failure
+  (lambda () (amb)))
+
+(define amb:assert
+  (lambda (pred)
+    (if (not pred) (amb:assert-failure))))
+</programlisting>
+</example>
+
+<para>
+It helps when reading the code to remember that the "failure continuation" is the way that the backtracker gets back into the list of values, and the "success continuation" is the way the function returns the next value back into the normal program flow.
+</para>
+
+</sect2>
+
+</sect1>
+
+<sect1>
+<title>Continuations: Everything You Ever Wanted from Flow-Control</title>
+
+<para>
+As you can see, continuations can be used to implement all sorts of advanced flow control statements.  With just a few statements, continuations can be built into exceptions, generators, backtrackers, and other types of advanced flow control.  This article has only scratched the surface of what is available.  With continuations you can also do things such as convert web applications into a more traditional flow control structure and implement user-level threads.  Unfortunately, many languages have not implemented continuations, and thus leave their users without the many flow control features available.  If a language only has continuations, it can implement the other advanced flow control features in a nearly trivial manner.
+</para>
+
+</sect1>
+
+<!--
+
+prolog URLs:
+http://www.cee.hw.ac.uk/~alison/ai3notes/subsectionstar2_3_3_3.html#SECTION0033300000000000000
+http://kti.ms.mff.cuni.cz/~bartak/prolog/how.html
+http://www.amzi.com/manuals/amzi7/pro/ref_execution.htm
+http://www.amzi.com/AdventureInProlog/a10unif.htm
+http://www.ifcomputer.co.jp/en/manuals5.2/uguide/node7.html
+http://www.mdx.ac.uk/www/psychology/cog/psy3230/findall.htm
+http://www.csupomona.edu/~jrfisher/www/prolog_tutorial/3_2.html
+http://pauillac.inria.fr/~diaz/gnu-prolog/manual/manual006.html#toc2
+http://www.compapp.dcu.ie/~alex/LOGIC/start.html
+
+
+descape functions
+  - early exit
+  - exceptions
+
+logic functions / backtracking
+
+web programming and continuations
+
+-->
+
+<!--
+References
+<ul>
+<li>The problems with unstructured local exits such as goto have been well-known since 1968, when Dijkstra published <a href="http://www.acm.org/classics/oct95/">Go To Statement Considered Harmful</a> in the <i>Communications of the ACM</i>.</li>
+<li>Linus and others maintain that <a href="http://kerneltrap.org/node/553/2131">the case against goto was well overdone</a>.</li>
+<li>The book Linux Device Drivers <a href="http://www.xml.com/ldd/chapter/book/ch02.html#buierr">gives a great example</a> of how unstructured exits can be much nicer to use.</li>
+<li>Sun has a tutorial on throwing exceptions in Java <a href="http://java.sun.com/docs/books/tutorial/essential/exceptions/throwing.html">here</a>.</li>
+<li>Some of the pitfalls of exception handling in Java are discussed <a href="http://www.onjava.com/pub/a/onjava/2003/11/19/exceptions.html">here</a>.</li>
+<li>Python generators are <a href="http://www-128.ibm.com/developerworks/library/l-pycon.html?t=gr,lnxw16=PyIntro">described here</a>.</li>
+<li>Everyone needs to know <a href="http://linuxgazette.net/100/pramode.html">Python generator tricks</a>.</li>
+<li>For those who don't know how to do logic programming, <a href="http://www.coli.uni-saarland.de/~kris/learn-prolog-now/">learn Prolog now</a>.</li>
+<li>Here is <a href="http://www.compapp.dcu.ie/~alex/LOGIC/start.html">another good Prolog introduction</a>.</li>
+<li>Without continuations, here's what you have to go through to get <a href="http://homepage.mac.com/sigfpe/Computing/continuations.html">backtracking in C</a>.</li>
+<li>If you want to know more about where continuations came from, <a href="http://www.dcs.qmul.ac.uk/~peterl/danvy/">here is their history</a>.</li>
+<li>Continuations have the possibility to <a href="http://www.iro.umontreal.ca/~feeley/cours/ift6232/doc/pres1/web-continuations.ps">dramatically change the way web programs are implemented</a>.</li>
+<li>Cocoon <a href="http://www-128.ibm.com/developerworks/java/library/j-contin.html">supports the use of continuations in Java web programming</a>.  It can also be <a href="http://www.ccs.neu.edu/scheme/pubs/ase2001-gfkf.pdf">done in Scheme</a>, or even in <a href="http://siscweb.sourceforge.net/overview.html">a Java-based Scheme</a>.</li>
+</ul>
+-->
+
+</chapter>

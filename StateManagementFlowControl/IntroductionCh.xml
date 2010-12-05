@@ -1,0 +1,105 @@
+<chapter>
+<title>Introduction</title>
+
+<sect1>
+<title>Before You Begin</title>
+
+<para>
+This book assumes that you know several programming languages already.
+Preferably, you should know at least one language from the following groups:
+
+<variablelist>
+
+<varlistentry>
+<term>Low-level Languages</term>
+<listitem><para>
+<itemizedlist>
+	<listitem><para>x86 assembly language</para></listitem>
+</itemizedlist>
+</para></listitem>
+</varlistentry>
+
+<varlistentry>
+<term>Mid-level Languages</term>
+<listitem><para>
+<itemizedlist>
+	<listitem><para>C</para></listitem>
+	<listitem><para>Pascal</para></listitem>
+	<listitem><para>Fortran</para></listitem>
+</itemizedlist>
+</para></listitem>
+</varlistentry>
+
+<varlistentry>
+<term>High-level Statically-bound Object-Oriented Languages</term>
+<listitem><para>
+<itemizedlist>
+	<listitem><para>Java</para></listitem>
+	<listitem><para>C++</para></listitem>
+</itemizedlist>
+</para></listitem>
+</varlistentry>
+
+<varlistentry>
+<term>High-level dynamically-bound Object-Oriented Languages</term>
+<listitem><para>
+<itemizedlist>
+	<listitem><para>Python</para></listitem>
+	<listitem><para>Perl</para></listitem>
+	<listitem><para>Smalltalk</para></listitem>
+</itemizedlist>
+</para></listitem>
+</varlistentry>
+
+</variablelist>
+
+It would also be helpful to know one of the functional languages, but most
+concepts that are specific to functional languages will be covered in this
+book.
+</para>
+
+<para>
+The book <citetitle>Programming from the Ground Up</citetitle> by Jonathan
+Bartlett is considered a prequel to this book.  It is not strictly necessary
+that your read that book, but it is necessary that you know the concepts
+it presents.  Also note that these books use the AT&amp;T syntax for
+assembly-language programming rather than the Intel syntax.
+</para>
+
+</sect1>
+
+<sect1>
+<title>Who This Book is For</title>
+
+<para>
+This book is for people who want a deeper understanding of how programming
+languages work and how they fit in to the overall craft of programming.
+The questions this book will answer are:
+
+<itemizedlist>
+<listitem><para>What is the purpose of a programming language?</para></listitem>
+<listitem><para>What kinds of things do programming languages manage?</para></listitem>
+</itemizedlist>
+
+Having a deeper understanding of what programming languages do and how they
+do them will help you to choose the right programming language for the
+right task.  It will acquaint you with programming styles and methods that
+may not be often used in the programming languages you currently use.  In
+addition, it will introduce you to programming concepts and constructs
+you may not even know exist - and give you a sample implementation of them.
+That way when programming you can choose to use a programming language that has that construct built-in, emulate that construct with your own code, or be
+carefult to avoid situations that would require it.
+</para>
+
+<para>
+This book is meant to take your programming to the next level.  The
+previous book, <citetitle>Programming from the Ground Up</citetitle>
+was meant to firmly ground you in the ways the machine works.  This book
+shows how to bridge the gap between how the machine works and how 
+modern languages function by providing more abstract mechanisms
+for state management and flow control.
+</para>
+
+</sect1>
+
+</chapter>

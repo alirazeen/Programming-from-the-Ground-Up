@@ -1,0 +1,973 @@
+<?xml version="1.0" ?>
+
+<dw-document xsi:noNamespaceSchemaLocation="http://dw.raleigh.ibm.com/developerworks/library/schema/4.0/dw-document-4.0.xsd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+<dw-article local-site="worldwide" ratings-form="auto" related-contents="auto" toc="auto" skill-level="3">
+<id cma-id="" domino-uid="" content-id="" original="yes"/>
+<keywords content="scheme,macro,code generator,code generation,program generator,syntax-rules,syntax-case,embedded sql,M4" />
+
+<!-- FIXME - update meta -->
+<meta-last-updated day="07" month="07" year="2005" initials="jlb"/>
+
+<content-area-primary name="linux" />
+
+<title>Code Generating Programs</title>
+<subtitle>The art of metaprogramming</subtitle>
+
+<author jobtitle="Director of Technology" company="New Media Worx" email="johnnyb@eskimo.com"  >
+<bio>Jonathan Bartlett is the author of the book <a href="http://www.cafeshops.com/bartlettpublish.8640017"><i>Programming from the Ground Up</i></a> which is an introduction to programming using Linux assembly language.  He is the lead developer at New Media Worx, developing web, video, kiosk, and desktop applications for clients.
+</bio>
+<name>Jonathan Bartlett</name>
+</author>
+
+<!-- FIXME - update date published -->
+<date-published day="07" month="07" year="2005" />
+
+<abstract>
+One of the most under-utilized programming techniques is writing programs
+that generate programs or program parts.  
+</abstract><docbody>
+
+<heading refname="" type="major" toc="yes" alttoc="">Why Write Programs to Generate Code</heading>
+
+<p>
+Writing programs which themselves write code has numerous applications.
+Code-generating
+programs are sometimes called <i>metaprograms</i> and 
+writing such programs is called <i>metaprogramming</i>.  
+</p>
+
+<p>
+There are many different uses for metaprogramming.
+</p>
+
+<p>
+First of all, you can write programs that will pre-generate tables of data
+for use at run-time.  For example, if you are writing a game and want a quick
+lookup table for the sine of all 8-bit integers you can either
+calculate each sine yourself and hand-code it, have your program build
+the table at startup at runtime, or write a program to build the custom
+code for the table before compile-time.
+While it may make sense to build the table at runtime for
+such a small set of numbers, other such tasks may cause program startup to
+be prohibitively slow.  In such cases, writing a program to build static 
+data tables is usually your best answer.
+</p>
+
+<p>
+Second, if you have a large application where many of the functions
+include a lot of boilerplate
+code, you can create a mini-language that will do the boilerplate code for
+you and allow you to code only the important parts.  Now, if you can, it's best
+to abstract out the boilerplate portions into a function.  Often, however,
+the boilerplate code isn't so pretty.  Maybe there's a list of variables
+that need to be declared in every instance, maybe you need to register 
+error handlers, or maybe there are several pieces of the boilerplate that
+have to have code inserted in certain circumstances.  All of these
+make a simple function call impossible.  In such cases, it is often a good
+idea to create a mini-language that allows you to work with your boilerplate
+code in an easier fashion.  This mini-language will then be converted into
+your regular source code language before compiling.
+</p>
+
+<p>
+Finally, a lot of programming languages make you write really verbose 
+statements to do really simple things.  Code generating programs allow
+you to abbreviate such statements and save a lot of typing, which
+also prevents a lot of mistakes because there is less
+chance of mistyping.
+</p>
+
+<p>
+As languages acquire more features, code generating programs get less and less
+appealing.  What is available as a standard feature of one language
+may be available only through a code generating program in another language.
+However, inadequate language design is not the only reason for needing
+code generating programs.
+Code generating programs allow you to develop and use small,
+domain-specific languages that are easier to write and maintain than writing
+them in the target language.
+</p>
+
+<p>
+The tools used to create these domain-specific languages are usually
+referred to as <i>macro languages</i>.  This article will discuss
+several kinds of macro languages, and show how they can be used to improve
+your code.
+</p>
+
+
+
+<heading refname="" type="major" toc="yes" alttoc="">Basic Textual Macro Languages</heading>
+
+<heading refname="" type="minor" toc="no" alttoc="">The C Preprocessor (CPP)</heading>
+
+<p>
+The first kind of metaprogramming we are going to look at involves textual macro languages.
+Textual macros are macros that directly affect the text of the programming 
+language without knowing or dealing in anything about the meaning of the programming 
+language.  The two most widely used textual macro systems are the 
+C preprocessor and the M4 macro processor.  If you've done C programming,
+you have probably dealt with the <code type="inline">#define</code> macro of C.  
+Textual macro expansion, while not ideal, is an easy way to do basic
+metaprogramming in many languages that don't have better code generation 
+capabilities.
+Here is an example of a <code type="inline">#define</code> macro:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 1. Simple macro to swap two values</heading>
+#define SWAP(a, b, type) { type __tmp_c; c = b; b = a; a = c; }
+</code>
+
+
+<p>
+This macro allows you to swap the two values of the given type.  This is
+best written as a macro for several reasons:
+</p>
+
+<ul>
+<li>A function call would take way too much overhead for a simple operation</li>
+<li>You would have to pass the variables' addresses to the function, rather than the variables' values. (This isn't too bad, but passing addresses  makes the function call messier, and prevents the compiler from being able to keep the values in registers.)</li>
+<li>You would have to code a different function for each type of item you wanted to swap.</li>
+</ul>
+
+<p>
+Here is an example of the macro being used:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 2. Using the SWAP macro</heading>
+#define SWAP(a, b, type) { type __tmp_c; c = b; b = a; a = c; }
+int main()
+{
+	int a = 3;
+	int b = 5;
+	printf("a is %d and b is %d\n", a, b);
+	SWAP(a, b, int);
+	printf("a is now %d and b is now %d\n", a, b);
+
+	return 0;
+}
+</code>
+
+
+<p>
+When the C pre-processor is run, it literally changes the text from 
+<code type="inline">SWAP(a, b, int)</code> to 
+<code type="inline">{ int __tmp_c; __tmp_c = b; b = a; a = __tmp_c; }</code>.  
+</p>
+
+<p>
+Textual substitution is a useful, but
+fairly limited feature.  This feature has the following problems:
+</p>
+
+<ul>
+<li>Textual substitution can get very messy when used in combination with other expressions.</li>
+<li>The C preprocessor allows only a fixed number of arguments to its macros.</li>
+<li>Because of the C language's type system, we often have to have different macros for different kinds of arguments or at least pass the type of the parameters as arguments.</li>
+<li>Because we are doing only textual substitution, C is not smart enough to rename our temporary variable if it conflicts with one of the arguments passed to it.  Our macro would utterly fail if it were passed a variable called <code type="inline">__tmp_c</code></li>
+</ul>
+
+<p>
+The problem of combining macros with expressions makes macro writing 
+fairly difficult.  For example, let's say you had the following macro
+called <code type="inline">MIN</code> that returns the smaller of two values:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 3. Macro to return the minimum of two values</heading>
+#define MIN(x, y) ((x) > (y) ? (y) : (x))
+</code>
+
+
+<p>
+First of all, you may be wondering why so many parentheses were used.  The
+reason is operator precedence.  For example, if you did 
+<code type="inline">MIN(27, b=32)</code>, without those parentheses it would expand 
+into <code type="inline">27 > b = 32 ? b = 32 : 27</code> which will get a compiler 
+error because <code type="inline">27 > b</code> will bind closer together because of
+operator precedence.  If you put the parentheses back in, it will work as
+expected.
+</p>
+
+<p>
+Unfortunately, there's still a second problem.  Any function called 
+as a parameter will be called for every time it is listed on the right-hand
+side.  Remember, the pre-processor knows nothing about the C language, and is
+just doing text substitutions.  Therefore, if you do 
+<code type="inline">MIN(do_long_calc(), do_long_calc2())</code>,
+ it will expand into <code type="inline">( (do_long_calc()) > (do_long_calc2()) ? (do_long_calc2()) : (do_long_calc()))</code>.  This will take a long time because
+at least one of the calculations will be performed twice.  It's even worse if
+one of those calculations has side effects (like printing, modifying a
+global variable, etc.) because these side effects will be processed twice.  
+This "multiple call" problem can even cause the macro to return the wrong
+value if one of the functions returns a different value each call.
+</p>
+
+<p>
+More information about C pre-processor macro programming is available in the 
+CPP manual (see the <a href="#resources">Resources</a> section for a link).
+</p>
+
+
+
+<heading refname="" type="minor" toc="no" alttoc="">The M4 Macro Processor</heading>
+
+<p>
+The M4 macro processor is one of the most advanced textual macro processing 
+systems.  It's main claim to fame is as a helper tool for 
+the popular Sendmail mailer 
+configuration file.  The Sendmail configuration is neither fun nor pretty.  There is
+an entire book just on sendmail's configuration file.  However, the makers
+of sendmail wrote a set of M4 macros to make the process easier.  In the macros
+you simply specify certain parameters, and the M4 processor applies boilerplate
+that is specific to both your local installation and sendmail in general, and
+comes up with a configuration file for you.
+</p>
+
+<p>
+For example, this is the M4 macro version of a typical sendmail configuration file:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 4. Sample sendmail configuration with M4 macros</heading>
+divert(-1)
+include(`/usr/share/sendmail-cf/m4/cf.m4')
+VERSIONID(`linux setup for my Linux dist')dnl
+OSTYPE(`linux')
+define(`confDEF_USER_ID',``8:12'')dnl
+undefine(`UUCP_RELAY')dnl
+undefine(`BITNET_RELAY')dnl
+define(`PROCMAIL_MAILER_PATH',`/usr/bin/procmail')dnl
+define(`ALIAS_FILE', `/etc/aliases')dnl
+define(`UUCP_MAILER_MAX', `2000000')dnl
+define(`confUSERDB_SPEC', `/etc/mail/userdb.db')dnl
+define(`confPRIVACY_FLAGS', `authwarnings,novrfy,noexpn,restrictqrun')dnl
+define(`confAUTH_OPTIONS', `A')dnl
+define(`confTO_IDENT', `0')dnl
+FEATURE(`no_default_msa',`dnl')dnl
+FEATURE(`smrsh',`/usr/sbin/smrsh')dnl
+FEATURE(`mailertable',`hash -o /etc/mail/mailertable.db')dnl
+FEATURE(`virtusertable',`hash -o /etc/mail/virtusertable.db')dnl
+FEATURE(redirect)dnl
+FEATURE(always_add_domain)dnl
+FEATURE(use_cw_file)dnl
+FEATURE(use_ct_file)dnl
+FEATURE(local_procmail,`',`procmail -t -Y -a $h -d $u')dnl
+FEATURE(`access_db',`hash -T&lt;TMPF&gt; -o /etc/mail/access.db')dnl
+FEATURE(`blacklist_recipients')dnl
+EXPOSED_USER(`root')dnl
+DAEMON_OPTIONS(`Port=smtp,Addr=127.0.0.1, Name=MTA')
+FEATURE(`accept_unresolvable_domains')dnl
+MAILER(smtp)dnl
+MAILER(procmail)dnl
+Cwlocalhost.localdomain
+</code>
+
+
+<p>
+You don't need to understand it, but just know that this small file, after 
+being run through the M4 macro processor, generates over 1,000 lines of
+configuration.  
+</p>
+
+<p>
+Similarly, autoconf uses M4 to produce shell scripts based on simple macros.
+If you've ever installed a program where the first thing you did was type
+in <code type="inline">./configure</code>, you probably used a program generated using
+autoconf macros.  Here is a simple autoconf program that generates a 
+<code type="inline">configure</code> program over 3,000 lines long:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 5. Sample autoconf script using M4 macros</heading>
+AC_INIT(hello.c)
+AM_CONFIG_HEADER(config.h)
+AM_INIT_AUTOMAKE(hello,0.1)
+AC_PROG_CC
+AC_PROG_INSTALL
+AC_OUTPUT(Makefile)
+</code>
+
+
+<p>
+When run through the macro processor, this will create a shell script
+that will do the standard configuration checks, look for the standard
+paths and compiler commands, and build a <code type="inline">config.h</code>
+and a <code type="inline">Makefile</code> for you from templates.
+</p>
+
+<p>
+The details of the M4 macro processor are too complex to discuss 
+here, but links to more information about the M4 macro processor and
+its use in Sendmail and Autoconf is provided in the
+<a href="#resources">Resources</a> section.
+</p>
+
+
+
+
+
+<heading refname="" type="major" toc="yes" alttoc="">Programs that Write Programs</heading>
+
+<p>
+In the previous section, we dealt with the M4 macro system, and showed how 
+using macros can turn a little bit of code into a whole lot.  The M4 system
+is a generic textual-substitution program.  In this section we will
+look at highly specialized code generators.  
+</p>
+
+<heading refname="" type="minor" toc="no" alttoc="">A Survey of Code Generators</heading>
+
+<p>
+GNU/Linux systems come with several program-writing programs.  The most popular
+are probably:
+<ul>
+<li>Flex, a lexical analyzer generator</li>
+<li>Bison, a parser generator</li>
+<li>Gperf, a perfect hash-function generator</li>
+</ul>
+</p>
+
+<p>
+These tools all generate output for the C language.  You may wonder, though, 
+why these are implemented as code generators instead of as functions.
+There are several reasons, among which are the following:
+</p>
+
+<ul>
+<li>The inputs to these functions are very complicated and not easily expressible in a form that is valid C code.</li>
+<li>These programs compute and generate many static lookup tables for operation, and therefore it is better to generate these tables once during pre-compile time than during every invocation of the program.</li>
+<li>Many aspects of the functioning of these systems are customizable with arbitrary code placed in specific positions.  This code can then use variables and functions which are part of the generated structure built by the code generator, without having to define and derive all of the variables manually.</li>
+</ul>
+
+<p>
+Each of these tools is focused on building a particular type of program.  Bison is used to generate parsers, and Flex is used to generate
+lexical analyzers.  Other tools are more focused on automating specific 
+aspects of programming.  For example, integrating database access methods 
+into imperative languages is often a chore.  For making this both easier 
+and more standardized, Embedded SQL is a metaprogramming system used to 
+easily combine database access with C.  
+</p>
+
+<p>
+While there are many libraries available that allow you to access databases 
+in C, using a code generator such as Embedded SQL
+makes combining C and database access much easier by merging SQL entities into C as an extended part of the language.  Many Embedded SQL implementations, however, are basically just
+specialized macro processors that generate regular C programs as output.  Using the Embedded SQL, though, makes the database access much
+more natural, intuitive, and error-free for the programmer than doing so through the direct use of libraries.  With Embedded SQL, the intricacies of database programming
+are masked by a sort of macro sublanguage.  
+</p>
+
+
+
+<heading refname="" type="minor" toc="no" alttoc="">An Example Usage of a Code Generator</heading>
+
+<p>
+To see how a code generator works, let's look at a short Embedded SQL 
+program.  In order to do this, we need an Embedded SQL processor. 
+PostgreSQL comes with an Embedded SQL compiler,
+<code type="inline">ecpg</code>.  To run this program, you need to create a database in PostgreSQL called "test".  Then, in that database, issue
+the following commands:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 6. Database creation script for example program</heading>
+create table people (id serial primary key, name varchar(50));
+insert into people (name) values ('Tony');
+insert into people (name) values ('Bob');
+insert into people (name) values ('Mary');
+</code>
+
+
+<p>
+Here is a simple program to read and print out the contents of the database, sorted by the <code type="inline">name</code> field:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 7. Example Embedded SQL program</heading>
+#include &lt;stdio.h&gt;
+int main()
+{
+	/* Setup database connection -- replace postgres/password w/ the username/password on your system*/
+	EXEC SQL CONNECT TO unix:postgresql://localhost/test USER postgres/password;
+
+	/* These variables are going to be used for temporary storage w/ the database */
+	EXEC SQL BEGIN DECLARE SECTION;
+	int my_id;
+	VARCHAR my_name[200];
+	EXEC SQL END DECLARE SECTION;
+
+	/* This is the statement we are going to execute */
+	EXEC SQL DECLARE test_cursor CURSOR FOR
+		SELECT id, name FROM people ORDER BY name;
+
+	/* Run the statement */
+	EXEC SQL OPEN test_cursor;
+
+	EXEC SQL WHENEVER NOT FOUND GOTO close_test_cursor;
+	while(1) /* our previous statement will handle exitting the loop */
+	{
+		/* Fetch the next value */
+		EXEC SQL FETCH test_cursor INTO :my_id, :my_name;
+		printf("Fetched ID is %d and fetched name is %s\n", my_id, my_name.arr);
+	}
+
+	/* Cleanup */
+	close_test_cursor:
+	EXEC SQL CLOSE test_cursor;
+	EXEC SQL DISCONNECT;
+
+	return 0;
+}
+</code>
+
+
+<p>
+If you've done database programming in C before with a regular database library, you can tell that this is a lot more natural way to
+code.  Normal C coding does not allow returning multiple return values of arbitrary type, 
+but our <code type="inline">EXEC SQL FETCH</code> line does precisely that.  
+</p>
+
+<p>
+To compile and run the program, just put it into a file called <code type="inline">test.pgc</code> and run the following commands:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 8. Building an Embedded SQL program</heading>
+ecpg test.pgc
+gcc test.c -lecpg -o test
+./test
+</code>
+
+
+
+
+<heading refname="" type="minor" toc="no" alttoc="">Building A Code Generator</heading>
+
+<p>
+Now that you've seen several types of code generators and the types of things that they can do, it is now
+time to write a small code generator.  Probably the simplest useful code generator you could write
+would be one to build static lookup tables.  Often, in order to build fast
+functions in C programming, you simply
+create a lookup table of all of the answers.  This means that you either need to precompute them by hand (which
+is wasteful of your time) or build them at runtime (which is wasteful of the user's time).  Here, you will build
+a generator that will take a function or set of functions on an integer, and build lookup tables for the answer.
+</p>
+
+<p>
+To think of how to make such a program, let's start from the end and work backward.  Let's say you want a lookup table that 
+will return square roots of numbers between 5 and 20.  A simple program
+can be written to generate such a table like this:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 9. Generate and use a lookup table of square roots</heading>
+/* our lookup table */
+double square_roots[21];
+
+/* function to load the table at runtime */
+void init_square_roots()
+{
+	int i;
+	for(i = 5; i &lt; 21; i++)
+	{
+		square_roots[i] = sqrt((double)i);
+	}
+}
+
+/* program that uses the table */
+int main ()
+{
+	init_square_roots();
+	printf("The square root of 5 is %f\n", square_roots[5]);
+	return 0;
+}
+</code>
+
+
+<p>
+Now, to convert this to a statically initialized array, one would remove the first part of the program and replace it with something like this, calculated by hand:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 10. Square root program with a static lookup table</heading>
+double square_roots[] = {
+	/* these are the ones we skipped */ 0.0, 0.0, 0.0, 0.0, 0.0
+	2.236068, /* Square root of 5 */
+	2.449490, /* Square root of 6 */
+	2.645751, /* Square root of 7 */
+	2.828427, /* Square root of 8 */
+	3.0, /* Square root of 9 */
+	...
+	4.472136 /* Square root of 20 */
+};
+</code>
+
+
+<p>
+So, what is needed is a program that will produce these values, and print them out in a table like the one above so they are loaded in at compile-time.
+</p>
+
+<p>
+Let's analyze the different pieces we have working here:
+</p>
+<ul>
+<li>An array name</li>
+<li>An array type</li>
+<li>A start index</li>
+<li>An end index</li>
+<li>A default value for the skipped entries</li>
+<li>An expression to compute the final value</li>
+</ul>
+
+<p>
+These are all very simple, well-defined pieces.  They can simply be spelled out as a simple list.  So we will probably want our macro call to combine these
+elements in a colon-separated list and look something like this:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 11. Our ideal method for generating a compile-time table of square roots</heading>
+/* sqrt.in */
+/* Our macro invocation to build us the table.  The format is: */
+/* TABLE:array name:type:start index:end index:default:expression */
+/* VAL is used as the placeholder for the current index in the expression */
+TABLE:square_roots:double:5:20:0.0:sqrt(VAL)
+
+int main()
+{
+	printf("The square root of 5 is %f\n", square_roots[5]);
+	return 0;
+}
+</code>
+
+
+<p>
+Now we just need a program to convert our macro into standard C.  For this
+simple example Perl will be used because it can evaluate user code
+in a string, and its syntax is largely C-like.  This allows it to load
+and process user code dynamically.
+</p>
+
+<p>
+Our code generator should process the macro declarations, but 
+pass through all non-macro portions unchanged.
+Therefore, the basic organization of the macro processor should look like this:
+</p>
+
+<ol>
+<li>Read in a line</li>
+<li>Should the line be processed?</li>
+<li>If so, process the line and generate output.</li>
+<li>If not, simply copy the line directly to the output unchanged.</li>
+</ol>
+
+<p>
+Here is the Perl code to create our table generator:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 12. Code generator for the table macro</heading>
+#!/usr/bin/perl
+#
+#tablegen.pl
+#
+
+##Puts each program line into $line
+while(my $line = &lt;&gt;)
+{
+	#Is this a macro invocation?
+	if($line =~ m/TABLE:/)
+	{
+		#If so, split it apart into its component pieces
+		my ($dummy, $table_name, $type, $start_idx, $end_idx, $default, $procedure) = split(m/:/, $line, 7);
+
+		#The main difference between C and Perl for mathematical expressions is that
+		#Perl prefixes its variables with a dollar sign, so we will add that here
+		$procedure =~ s/VAL/\$VAL/g;
+	
+		#Print out the array declaration
+		print "${type} ${table_name} [] = {\n";
+
+		#Go through each array element
+		foreach my $VAL (0 .. $end_idx)
+		{
+			#Only process an answer if we have reached our starting index
+			if($VAL &gt;= $start_idx)
+			{
+				#evaluate the procedure specified (this sets $@ if there are any errors)
+				$result = eval $procedure;
+				die("Error processing: $@") if $@;
+			}
+			else
+			{
+				#if we haven't reached the starting index, just use the default
+				$result = $default;
+			}
+
+			#Print out the value
+			print "\t${result}";
+
+			#If there are more to be processed, add a comma after the value
+			if($VAL != $end_idx)
+			{ 
+				print ","; 
+			}
+
+			print "\n"
+		}
+
+		#Finish the declaration
+		print "};\n";
+	}
+	else
+	{
+		#If this is not a macro invocation, just copy the line directly to the output
+		print $line;
+	}
+}
+</code>
+
+
+<p>
+To run this program do this:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 13. Running the code generator</heading>
+./tablegen.pl &lt; sqrt.in &gt; sqrt.c
+gcc sqrt.c -o sqrt
+./a.out
+</code>
+
+
+<p>
+So in just a few lines of code you created a simple code generator that can dramatically ease 
+your programming tasks.  With just that single macro, you can take away a lot of work for any 
+program that has to generate mathematical tables indexed by integer.  A little extra work
+would also allow tables containing full struct definitions, and a little more would 
+ensure that  space isn't wastedat the front of the array with useless empty entries.
+</p>
+
+
+
+
+
+
+<heading refname="" type="major" toc="yes" alttoc="">Language-Sensitive Macro Programming with Scheme</heading>
+
+<p>
+While code generators usually understand a little bit about the target language, they are usually
+not full parsers, and cannot fully take the target language into account without rewriting
+a complete compiler.  However, this might be simplified if there was a language 
+already represented with a simple data structure.  In the Scheme programming language, 
+the language itself is represented as a linked list, and 
+<a href="http://www.ibm.com/developerworks/linux/library/l-listproc/">the Scheme programming language is built for list processing</a>!
+This makes Scheme almost the ideal language for creating programs that are transformed -- no massive
+parsing is needed to parse the program, and Scheme itself is a list-processing language.
+</p>
+
+<p>
+In fact, Scheme's abilities to do transformation go even beyond that.  The Scheme standard defines
+a macro language specifically built to make it easier to make additions to the language.  On top
+of that, most Scheme implementations provide additional features to aid in building 
+code-generating programs.
+</p>
+
+<p>
+Let's re-examine the problems of our C macros.  With the <code type="inline">SWAP</code>
+macro you first had to explicitly say what types of
+values you were swapping, and, second, you had to use a name for the temporary variable that
+you were sure wasn't in use elsewhere.  Let's examine what the equivalent looks like in 
+Scheme and how Scheme solves these issues:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 14. Value-swapping macro in Scheme</heading>
+;;Define SWAP to be a macro
+(define-syntax SWAP
+	;;We are using the syntax-rules method of macro-building
+	(syntax-rules ()
+		;;Rule Group
+		(
+			;;This is the pattern we are matching
+			(SWAP a b)
+			;;This is what we want it to transform into
+			(let (
+					(c b))
+				(set! b a)
+				(set! a c)))))
+
+(define first 2)
+(define second 9)
+(SWAP first second)
+(display "first is: ")
+(display first)
+(newline)
+(display "second is: ")
+(display second)
+(newline)
+</code>
+
+
+<p>
+This is a <code type="inline">syntax-rules</code> macro.  There are several macro systems for Scheme, but <code type="inline">syntax-rules</code> is the standard.  In a <code type="inline">syntax-rules</code> macro, <code type="inline">define-syntax</code> is
+the keyword used to define a macro transformation.  After the <code type="inline">define-syntax</code>
+keyword comes the name of the macro being defined, and after that, comes the transformation.
+<code type="inline">syntax-rules</code> is the type of transformation being applied.  Within the
+parentheses are any other macro-specific symbols being used other than the macro
+name itself (there are none in this case).  After that comes a sequence of transforming rules.
+The syntax transformer will go through each rule and try to find a matching pattern.
+After it finds one, it runs the given transformation.  In this case there is only one
+pattern: <code type="inline">(SWAP a b)</code>.  <code type="inline">a</code> and <code type="inline">b</code> are <i>pattern variables</i> which are matched to units of code in the macro invocation, and used to rearrange the parts during transformation.
+</p>
+
+<p>
+From the first look, this may appear to have some of the same pitfalls of 
+the C version.  However, there are several differences.  First of all,
+since this is the Scheme language, the types are bound to the
+values themselves, not the variable names, so there is no worry at all about the variable type problems that occurred in the C version.
+But doesn't this have the same problem of variable naming that the original one had?
+That is, if one of the variables were named <code type="inline">c</code>, wouldn't that cause a 
+conflict?
+</p>
+
+<p>
+Actually, it wouldn't.  Macros in Scheme using <code type="inline">syntax-rules</code>
+are <i>hygienic</i>.  This means that
+all temporary variables used by a macro are automatically renamed 
+<i>before the substitution occurs</i> in order to prevent them from having
+conflicting names.  Therefore, in this macro, <code type="inline">c</code> will be renamed to something
+else before substitutions if one of the substitution variables is named <code type="inline">c</code>.
+In fact, it will likely be renamed anyway.  Here is a possible result of the macro 
+transformation on the program:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 15. Possible transformation of the value-swapping macro</heading>
+(define first 2)
+(define second 9)
+(let 
+	(
+		(__generated_symbol_1 second))
+	(set! second first)
+	(set! first __generated_symbol_1))
+(display "first is: ")
+(display first)
+(newline)
+(display "second is: ")
+(display second)
+(newline)
+</code>
+
+
+<p>
+As you can see, Scheme's hygienic macros can bring you the benefits of
+other macro systems without many of their pitfalls.  Sometimes, however,
+you want macros not to be hygienic.  For example, you may want to 
+introduce bindings in your macro that are accessible to the code you
+are transforming.  Simply declaring a variable will not do because the 
+<code type="inline">syntax-rules</code> system will simply rename the variable.
+Therefore, most schemes also include a non-hygienic macro system called
+<code type="inline">syntax-case</code>.  <code type="inline">syntax-case</code> macros
+are harder to write, but they are much more powerful because you have pretty
+much the entire Scheme runtime available to you for transformation.  
+<code type="inline">syntax-case</code> macros are not really standard, but they
+are implemented on many Scheme systems.  Those that do not have <code type="inline">syntax-case</code>
+usually have other, similar systems available.
+</p>
+
+<p>
+Let's look at the basic form of a <code type="inline">syntax-case</code> macro.
+Let's define a macro called <code type="inline">at-compile-time</code>
+that will execute a given form during compilation.
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 16. Macro to generate a value or set of values at compile time</heading>
+;;Define our macro
+(define-syntax at-compile-time
+	;;x is the syntax object to be transformed
+	(lambda (x)
+		(syntax-case x ()
+			(
+				;;Pattern just like a syntax-rules pattern
+				(at-compile-time expression)
+
+				;;with-syntax allows us to build syntax objects
+				;;dynamically
+				(with-syntax 
+					(
+						;this is the syntax object we are building
+						(expression-value 
+							;after computing expression, transform it into a syntax object
+							(datum->syntax-object 
+								;syntax domain
+								(syntax k) 
+								;quote the value so that its a literal value
+								(list 'quote 
+								;compute the value to transform 
+									(eval 
+										;;convert the expression from the syntax representation
+										;;to a list representation
+										(syntax-object->datum (syntax expression))
+										;;environment to evaluate in
+										(interaction-environment)
+										)))))
+					;;Just return the generated value as the result
+					(syntax expression-value))))))
+
+(define a 
+	;;converts to 5 at compile-time
+	(at-compile-time (+ 2 3)))
+</code>
+
+
+<p>
+This will perform the given operation at compile time.  More specifically, it will perform
+the given operation at macro-expansion time, which is not always the same as compile time
+in Scheme systems.  Any expression allowed at compile-time on your Scheme system
+will be available for use in this expression.  Now lets see how it works.
+</p>
+
+<p>
+With <code type="inline">syntax-case</code>, you actually are defining a transforming function,
+which is where the lambda comes in.  The <code type="inline">x</code> is the expression being
+transformed.  <code type="inline">with-syntax</code> defines additional syntax elements that can
+be used in the transforming expression.  <code type="inline">syntax</code> takes the syntax
+elements and combines them back together, following the same rules as the transformer
+in <code type="inline">syntax-rules</code>.  Let's look at what's happening a step at a time:
+</p>
+
+<ol>
+<li>The <code type="inline">at-compile-time</code> expression is matched.</li>
+<li>In the innermost part of the transformation, <code type="inline">expression</code> is converted to a list representation and is evaluated as normal scheme code.</li>
+<li>The result is then combined with the symbol <code type="inline">quote</code> into a list so that Scheme will treat it as a literal value when it becomes code.</li>
+<li>This data is converted into a syntax object.</li>
+<li>This syntax object is given the name <code type="inline">expression-value</code> for expressing it in the output.</li>
+<li>The transformer <code type="inline">(syntax expression-value)</code> says that <code type="inline">expression-value</code> is the entirety of the output from this macro.</li>
+</ol>
+
+<p>
+With this ability to perform computations at compile time, an even better version of the <code type="inline">TABLE</code> macro can be made than
+we defined for the C language.  Here is how you would do it in Scheme with our
+<code type="inline">at-compile-time</code> macro:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 17. Building the square root table in Scheme</heading>
+(define sqrt-table 
+	(at-compile-time 
+		(list->vector
+			(let build
+				(
+					(val 0))
+				(if (&gt; val 20)
+					'()
+					(cons (sqrt val) (build (+ val 1))))))))
+
+(display (vector-ref sqrt-table 5))
+(newline)
+</code>
+
+
+<p>
+This can be made even easier to use by making a further macro for
+table-building that will be remarkably similar to our C language macro:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 18. Macro to build lookup tables at compile time</heading>
+(define-syntax build-compiled-table
+	(syntax-rules ()
+		(
+			(build-compiled-table name start end default func)
+			(define name
+				(at-compile-time
+					(list->vector
+						(let build
+							(
+								(val 0))
+							(if (&gt; val end)
+								'()
+								(if (&lt; val start)
+									(cons default (build (+ val 1)))
+									(cons (func val) (build (+ val 1))))))))))))
+
+(build-compiled-table sqrt-table 5 20 0.0 sqrt)
+(display (vector-ref sqrt-table 5))
+(newline)
+</code>
+
+
+<p>
+Now you have a function that allows you to easily build whatever kind of tables you wish.
+</p>
+
+
+
+<heading refname="" type="major" toc="yes" alttoc="">Review</heading>
+
+<p>
+This article has covered a large amount of territory, so lets take a moment to review.  First we discussed
+which problems were best solved with a code generating program.  These include:
+</p>
+
+<ul>
+<li>programs that need to pre-generate data tables</li>
+<li>programs that have a lot of boilerplate code that cannot be abstracted into functions</li>
+<li>programs using techniques that are overly verbose in the language you are writing them in</li>
+</ul>
+
+<p>
+We then looked at several metaprogramming systems and examples of their use.  This included generic textual-substitution systems
+as well as domain-specific program and function generators.  We then examined a specific instance of table-building and went through
+the motions of writing a code-generating program to build static tables in C.
+</p>
+
+<p>
+Finally, we looked at Scheme, and saw how it is able to tackle the issues we faced in the C language using constructs that were 
+part of the Scheme language itself.  We saw how Scheme itself is built
+to be both a language and a code generating language for itself.
+Because these techniques are built into the language itself, it is simpler to program and doesn't suffer from many of the same 
+problems inherent in other techniques discussed.  This allows the programmer to simply and easily add domain-specific extensions to 
+the Scheme language in the place that code generators have traditionally held.
+</p>
+
+<p>
+In the next installment, we will examine in more detail how Scheme macros are programmed and how they can make large-scale programming tasks significantly easier..
+</p>
+
+</docbody>
+
+<related-list>
+<a href="http://www-128.ibm.com/developerworks/linux/library/l-listproc/">Better programming through effective list handling</a>
+<a href="http://www-128.ibm.com/developerworks/ibm/library/ibm-codegen/index.html">Using XML and XSL for code generation</a>
+<a href="http://www-128.ibm.com/developerworks/edu/x-dw-codexslt-i.html">Code generation using XSLT</a>
+<a href="http://www-128.ibm.com/developerworks/java/library/j-dyn0610/index.html">Replacing reflection with code generation</a>
+<a href="http://www-128.ibm.com/developerworks/opensource/library/os-ecemf3/index.html">Customize generated models and editors with Eclipse's JMerge</a>
+<a href="http://www-128.ibm.com/developerworks/websphere/library/techarticles/0406_barosa/0406_barosa.html">Web transactions without Java code using VisualAge Generator and WebSphere</a>
+</related-list>
+
+<resource-list>
+<ul>
+<li><a href="http://gcc.gnu.org/onlinedocs/gcc-4.0.0/cpp/">The GNU CPP manual</a> has a lot of information about what is available for GCC macro processing, as well as all of the caveats you need to know when programming them.</li>
+<li>For more information about M4, here is the <a href="http://www.gnu.org/software/m4/manual/m4.html">manual for GNU M4</a>.</li>
+<li>For a quick introduction to M4 check out <a href="http://www.linuxjournal.com/article/5594">Linux Journal tutorial</a>.</li>
+<li>If you want to know more about on Sendmail's M4 macros, here is <a href="http://www.sendmail.org/m4/readme.html">the official reference</a>.</li>
+<li>To know more about the GNU build system and how many tasks can be automated with autoconf and M4 macros, see the <a href="http://www.amath.washington.edu/~lf/tutorials/autoconf/toolsmanual.html">GNU build system tutorial</a>.</li>
+<li>You can learn more about Flex and Bison through either this <a href="http://ds9a.nl/lex-yacc/cvs/output/lexyacc.html#toc9">tutorial</a> or this <a href="http://www.amazon.com/exec/obidos/ASIN/1565920007/freeeducation-20/">book</a>.</li>
+<li>More information about Embedded SQL with PostgreSQL is <a href="http://www.postgresql.org/docs/8.0/interactive/ecpg.html">here</a>.</li>
+<li>For DB2 developers, here is a <a href="http://www-128.ibm.com/developerworks/edu/i-dw-db2-cert7033-i.html">tutorial on Embedded SQL with DB2</a>.</li>
+<li>Here is a <a href="http://schemecookbook.org/Cookbook/GettingStartedMacros">list of tutorials</a> to get you started with Scheme macro programming using <tt>syntax-case</tt> and <tt>syntax-rules</tt>.</li>
+<li>An interesting resource for the code generating aspect of programming is the <a href="http://www.codegeneration.net/">Code Generation Network</a>.</li>
+<li>Here is a quick and pragmatic list of <a href="http://www.devx.com/Java/Article/15511">reasons why code generation is important</a>.</li>
+<li>There are few books that cover code generation but <a href="http://www.amazon.com/exec/obidos/ASIN/1930110979/freeeducation-20/">here is a fairly good one</a>.</li>
+</ul>
+</resource-list>
+
+</dw-article>
+</dw-document>
+

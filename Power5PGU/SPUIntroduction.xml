@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<chapter>
+<title>An Introduction to Programming the Playstation 3's Synergistic Processing Elements</title>
+<para>
+In the last article, we installed Linux on the PS3 and did a short example program.  In this article, we will begin looking in-depth at the Cell processor's Synergistic Processor Elements (SPEs) and how they work at the lowest level.
+</para>
+
+<sect1>
+<title>An Overview of the SPEs</title>
+<para>
+The last article gave an overview of the Cell processor (for other overviews, see the resources at the end of the article).  This article begins an in-depth discussion of the Cell's Synergistic Processing Elements (SPEs).  (for an in-depth discussion about programming the Power Processing Element (PPE) see <ulink url="http://www-128.ibm.com/developerworks/library/l-powasm1.html">this series</ulink>).  Because the SPEs use such a different architecture, we will be beginning our look into them in assembly language to get the full feel for what is happening.  Later we will move on to programming them in C, but assembly language will give a better view of the distinctiveness of the processor.  Then, when we move to C, you will have a better understanding of how different coding decisions may affect performance.  This article will focus on the basic syntax and usage of SPE assembly language, the ABI (the <emphasis>application binary interface</emphasis>, which are the function calling conventions of the platform), and how to communicate between the SPE and the PPE.  The next article will go into how to use the unique features of the SPE's assembly language to optimize your code.
+</para>
+
+<para>
+As mentioned in the previous article, the Cell consists of a Power Processing Element (PPE) which has several satellite Synergistic Processing Elements (SPEs).  The PPE is responsible for running the operating system, resource management, and input/output.  The SPEs are responsible for data processing tasks. The SPEs do not have direct access to main memory, but only a small (256K on the PS3) <emphasis>local store</emphasis> (LS) which is in an independent, 32-bit address space.  An address within the local store's address space is called a <emphasis>local store address</emphasis> (LSA) while an address within the controlling process on the PPE is called an <emphasis>effective address</emphasis> (EA).  The SPEs include an attached <emphasis>memory flow controller</emphasis> (MFC).  The SPEs use the MFC to transfer data between the local store and main memory. 
+</para>
+
+<para>
+The Synergistic Processing Unit (SPU) is the part of the SPE which actually runs your code.  The SPU has 128 general-purpose registers, each 128 bits wide.  However, the point of the SPU is not to do operations on 128-bit values.  Instead, the processor is a <emphasis>vector</emphasis> processor.  This means that each register is divided into multiple, smaller values, and instructions operate on all of the values simultaneously.  Normally, the registers are treated as four distinct 32-bit values (32 bits is considered the word size on the SPUs), though they can also be treated as sixteen 8-bit values (bytes), eight 16-bit values (halfwords), two 64-bit values (doublewords), or as a single 128-bit value (quadword).  The code will be looking at in this article is actually non-vector (also known as <emphasis>scalar</emphasis>) code, meaning that it only works with one value at a time.  It will use some vector operations, but we will only be concerned with one value within each register - the others we will simply ignore.  The next article will deal with vector operations.
+</para> 
+
+<para>
+This article does not require that you be experienced with assembly language, though it would be helpful.  Some features of the SPE will be compared and contrasted with the features of the PPE, though knowledge of the PPE is also not required.  For a discussion of PPE features, see <ulink url="http://www-128.ibm.com/developerworks/library/l-powasm1.html">this article series</ulink>.
+</para>
+
+<para>
+The build commands in this article assume that you have Yellow Dog Linux installed according to the instructions of the <ulink url="">previous article</ulink>.  If you are using another distribution, some of the command names and flags may change.  For example, if you are using the IBM System Simulator, then all references to <literal>gcc</literal> should be changed to <literal>ppu-gcc</literal> and all references to <literal>embedspu</literal> should be changed to <literal>ppu-embedspu</literal>.  Depending on where the libraries and header files are installed, additional flags may also need to be passed to find them.
+</para>
+</sect1>
+
+
+<sect1>
+<title>Conclusion</title>
+
+<para>
+In this article, we tried to cover the main concepts of assembly language programming on the Playstation 3's Cell Processor under Linux.  We covered the basic architecture, the syntax of the SPU assembly language, and the primary modes of communication between the SPE and the PPE.  In the next article, we will look at how to pump every ounce of performance out of the Cell SPEs that we can.  In later articles, we will then apply this knowledge to SPE programming in C, to make our lives just a little bit easier.
+</para>
+
+</sect1>
+</chapter>
+
+<!--
+
+<resource-list>
+<ul>
+<li>The details of every SPU instruction is available in the <a href="http://www-306.ibm.com/chips/techlib/techlib.nsf/techdocs/76CA6C7304210F3987257060006F2C44">SPU Instruction Set Architecture Reference Guide</a>.  However, most of the time you are better off looking at the short summaries in the <a href="http://www-306.ibm.com/chips/techlib/techlib.nsf/techdocs/EFA2B196893B550787257060006FC9FB">SPU assembly language</a> guide.  In fact, to get a good overview of what the SPU can do, I suggest a read through the assembly language guide.  It is both short and packed with information.  If the instruction doesn't make sense, then look up the full definition in the  instruction set architecture architecture referece.</li>
+<li>For ABI details, see the <a href="http://www-306.ibm.com/chips/techlib/techlib.nsf/techdocs/02E544E65760B0BF87257060006F8F20">SPU ABI documentation</a> as well as the <a href="http://www-306.ibm.com/chips/techlib/techlib.nsf/techdocs/44DA30A1555CBB73872570B20057D5C8">Linux extensions to the ABI</a>.</li>
+<li>An additional method of interprocess communication using special references called EAR references is this <a href="http://www.embedded.com/showArticle.jhtml?articleID=188101999">guide to CESOF linkables</a>.  However, the example given uses the function <literal>copy_from_ls</literal> which is not available in the open-source SDK, but is available in the IBM System Simulator for the Cell.  <literal>copy_from_ls</literal> and <literal>copy_to_ls</literal> allow you to perform DMA transfers without regards to alignment, but they both take considerably longer to run.</li>
+<li>Here is <a href="http://www.power.org/resources/devcorner/cellcorner/cellworkshop0606/Day1_09-1_CourseCode_L3T2H1-56_DevelopingCodeForCell-DMA.pdf">a good tutorial on DMA transfers on the Cell processor using C</a>.</li>
+<li>Here is <a href="http://www.power.org/resources/devcorner/cellcorner/cellworkshop0606/Day1_09-2_CourseCode_L3T2H1-55_DevelopingCodeForCell-Mailboxes.pdf">a more extensive tutorial on using mailboxes</a> (also in C).</li> 
+<li>The <a href="http://www-306.ibm.com/chips/techlib/techlib.nsf/techdocs/771EC60D862C5857872571A8006A206B">documentation of the SPE management library</a> describes in detail task creation and communication with SPEs from the PPE.</li>
+<li>The Definitive Source of Information about the Cell Processor itself is the <a href="http://www-306.ibm.com/chips/techlib/techlib.nsf/techdocs/9F820A5FFA3ECE8C8725716A0062585F">Cell BE Handbook</a>.</li>
+</ul>
+-->
+
+
+
+

@@ -1,0 +1,399 @@
+<chapter>
+<title>Values and Data</title>
+
+<para>
+Values are a fundamental idea of computer programming.  They are the
+substance of program state.  This chapter gives an overview of the
+ideas behind values and types as well as methods for implementing them.
+</para>
+
+<sect1>
+<title>Interpretting Memory</title>
+
+<para>
+Modern computers store all values as binary numbers in their memory.  They
+have no concept of what those values are to be used for, nor even what format
+they are in.  A number that was stored as a floating-point value is stored
+in the same locations of memory that integers are stored in.  If the programmer
+accidentally reads in a floating-point memory location as an integer, they
+will simply receive an invalid answer - the machine itself will not detect
+any problem.  
+</para>
+
+<para>
+The computer has a simplistic notion of value - it knows only bits, bytes, 
+words, and their addresses.  It is up to the programmer to interpret
+what those bytes mean and use them appropriately.  A programmers notion
+of value is much deeper - it can be an integer, a signed integer, a 
+floating-point value, or a character.  In fact, that's not all!  To a 
+programmer, such things as character strings, dates, times, boolean
+values, street addresses and numerous other things all count as values.
+</para>
+
+<para>
+So what is a value?  A value is a set member.  In this case, the set
+is usually referred to as a type. For example, the number 1 is a value.  
+It is a member of the type (or set) integer.  Specifically, it is 
+the first member after 0.  It is possible
+for a value to be a member of multiple types.  The number 1 is 
+an integer, a positive integer, and a real number.  A type is really
+a set, although usually an infinite set.  Although a value can be a
+membber of multiple types, our implementation of values will restrict
+a value to being a member of one type only - although you can convert
+between types if a value is a member of more than one type.  There are
+many strategies for representing a value in a computer.  Some details
+that have to be addressed by any of these strategies are:
+
+<itemizedlist>
+<listitem><para>Is the representation optimized for access speed, manipulation, or size?</para></listitem>
+<listitem><para>How will the type and representation of the value be communicated?</para></listitem>
+<listitem><para>Will values be mutable?</para></listitem>
+<listitem><para>Will the type system be extensible?</para></listitem>
+<listitem><para>How will values be created and destroyed?</para></listitem>
+<listitem><para>How will the system know when a value can be destroyed?</para></listitem>
+</itemizedlist>
+</para>
+
+</sect1>
+
+<sect1>
+<title>Value Lifecycle</title>
+
+<para>
+Values have a lifecycle of four parts - creation, manipulation, deactivation,
+and destruction.  The creation step involves both allocating the memory and
+actually placing the value in the memory.  Manipulation can be either
+changing the value or simply calling procedures on it to use it in some fashion.
+Deactivation is when a value is shut down but it is still accessible.  For
+example, database connections usually can be shut down without being destroyed.
+Often times, they can also be re-connected.  Deactivation is useful when
+the value is still referenced by other parts of the program, but needs to
+be taken out of active use.  This way, the other parts of the program can
+still tell the type of the value ity is since it still exists in memory with 
+the control header.  They can tell "yes this is a database connection, and
+it has been shut down".  If the value had been destroyed, they would not
+be able to tell what kind of value they were showing for sure, much less how
+to query it's status.  Most values don't need to be deactivated, however.
+Numbers and string, for example, have no "deactivated" state.  It just
+doesn't make sense for them.  Therefore, many values are never deactivated.
+The final state, destruction, returns all memory 
+associated with a value back to common storage.
+</para>
+
+<para>
+Value destruction poses an interesting problem.  Specifically, the question
+exists "is it safe to destroy a value?"  In the previous discussion, we
+saw how if the database connection were destroyed instead of simply
+deactivated, all of the type information would be gone, and the part of
+the program which used that value would not know what was even supposed
+to be there.  In fact, if two parts of a program were using the same
+value, and one of them destroyed the value, the other part of the 
+program would definitely have an error, because a value it is actively
+using simply vanished.  A good value system needs to be able to manage
+situations like this.
+</para>
+
+<para>
+Garbage collection is the term used for managing the destruction of values.
+Garbage collection is the process of determining which values are no
+longer being usedd by the program and destroying them, possibly deactivating
+them first if they aren't already deactivated.  There are many methods
+of garbage collection.  The one we will use here is called reference
+counting.  It has its problems, but it is simple to use and implement.
+The way reference counting works is that each value contains a number in
+its common control header called a reference count which tells how many 
+different places it is being used by the program.  Whenever a new part of 
+the program starts using that value, it increments the reference count.
+Whenever a part of the program stops using that value, it decrements the
+reference count and, if the reference count is down to zero, it deactivates
+and destroys the value.
+</para>
+
+</sect1>
+
+<sect1>
+<title>Value Implementation</title>
+
+<para>
+Our implementation of values will be as follows:
+
+<itemizedlist>
+<listitem><para>Each value will include a standard control header used by the system for enforcing the value system which will include
+	<itemizedlist>
+	<listitem><para>An integer representing the type the value belongs to</para></listitem>
+	<listitem><para>A reference count for garbage collection</para></listitem>
+	<listitem><para>A function which can be called to destroy the value (this will be 0 if the standard destruction function is to be used)</para></listitem>
+	</itemizedlist>
+</para></listitem>
+<listitem><para>Each value will include after the header a type-dependent range of memory for storage of the value</para></listitem>
+<listitem><para>Values will for the most part be manipulated through type-specific function calls so that their implementation can change without affecting programs written against them</para></listitem>
+</itemizedlist>
+
+The implementation will be as follows:
+
+<programlisting>
+<?lp-file id="cvicommonvalueimplementation" file="commonvalue.s"?>
+<?lp-section-id?>CVI Common Value Implementation<?lp-section-id-end?> =
+<?lp-code?>
+.section .data
+<?lp-ref?>{CVI Control Header Definition}<?lp-ref-end?>
+<?lp-ref?>{CVI Global Values}<?lp-ref-end?>
+
+.section .text
+<?lp-ref?>{CVI Default Value Lifecycle Functions}<?lp-ref-end?>
+<?lp-code-end?>
+</programlisting>
+
+As we mentioned earlier, the control header will include a
+type specifier which will be an integer.  We are going to
+go with all 32-bit integers where we can because they are
+easiest to work with.  The type will be the first part
+of the definition.  Note that these definitions are simply
+integer offsets from the base of a value structure.
+
+<programlisting>
+<?lp-section-id?>CVI Control Header Definition<?lp-section-id-end?> =
+<?lp-code?>
+	.globl TYPE_POSITION
+	.equ   TYPE_POSITION, 0
+<?lp-code-end?>
+</programlisting>
+
+The control header will also include an integer containing the
+current reference count.
+
+<programlisting>
+<?lp-section-id?>CVI Control Header Definition<?lp-section-id-end?> +=
+<?lp-code?>
+	.globl REFCOUNT_POSITION
+	.equ   REFCOUNT_POSITION, 4
+<?lp-code-end?>
+</programlisting>
+
+Finally, we will have our function for destroying the value at the
+end.
+
+<programlisting>
+<?lp-section-id?>CVI Control Header Definition<?lp-section-id-end?> +=
+<?lp-code?>
+	.globl DESTROY_FUNCTION_POSITION
+	.equ   DESTROY_FUNCTION_POSITION, 8
+<?lp-code-end?>
+</programlisting>
+
+Now that the header is defined, we can add a definition for the
+header size.  This way, our types can use this constant instead
+of having to hard-code the size of the control header.  If we
+later decide to add or remove entries, we don't have to rewrite
+the value-manipulation code for each type.
+
+<programlisting>
+<?lp-section-id?>CVI Control Header Definition<?lp-section-id-end?> +=
+<?lp-code?>
+	.globl BASE_SIZE
+	.equ   BASE_SIZE, 12
+<?lp-code-end?>
+</programlisting>
+
+The only default lifecycle functions we will have are reference and
+dereference, which are used to keep track of when we can destroy
+a value.  Dereference also takes care of the actual value destruction
+if it is necessary.
+</para>
+
+<programlisting>
+<?lp-section-id?>CVI Default Value Lifecycle Functions<?lp-section-id-end?> =
+<?lp-code?>
+#Variables passed to this function
+	.equ ST_VALUE, 8  #This is the value to reference
+
+	.globl reference
+	.type  reference,@function
+reference:
+	<?lp-ref?>{Standard Function Begin}<?lp-ref-end?>
+
+	#Load the value into %eax
+	movl  ST_VALUE(%ebp), %eax
+
+	<?lp-ref?>{CVI Check for Reference Special Cases}<?lp-ref-end?>
+
+	incl  REFCOUNT_POSITION(%eax)
+
+	#This label is used for the special cases to jump to
+	#if they need to to leave the function
+reference_end:
+	<?lp-ref?>{Standard Function End}<?lp-ref-end?>
+
+<?lp-section-id?>CVI Check for Reference Special Cases<?lp-section-id-end?>
+<?lp-code?>
+	#Null lists aren't referenced
+	cmpl  $NULL_LIST, %eax
+	jz    reference_end
+<?lp-code-end?>
+
+<?lp-section-id?>CVI Default Value Lifecycle Functions<?lp-section-id-end?> =
+<?lp-code?>
+	.globl dereference
+	.type  dereference,@function
+dereference:
+	<?lp-ref?>{Standard Function Begin}<?lp-ref-end?>
+	movl  ST_VALUE(%ebp), %eax
+
+	<?lp-ref?>{CVI Check for Dereference Special Cases}<?lp-ref-end?>
+
+	decl  REFCOUNT_POSITION(%eax)
+
+	jnz   dereference_end
+
+	#Refcount is 0, must call destroying function if it exists,
+	#and then deallocate the memory
+	movl  DESTROY_FUNCTION_POSITION(%eax), %ebx
+
+	pushl %eax
+
+	cmpl  $0, %ebx
+	je    deallocate_memory
+
+	call  *%ebx
+
+deallocate_memory:
+	call  deallocate
+	
+dereference_end:
+	<?lp-ref?>{Standard Function End}<?lp-ref-end?>
+<?lp-code-end?>
+</programlisting>
+
+<para>
+The asterisk before &ebx; which has the cleanup function means to
+call to the address listed in the register.
+</para>
+
+<para>
+Now we have the following parts of the lifecycle defined:
+
+<itemizedlist>
+<listitem><para>Memory allocation</para></listitem>
+<listitem><para>Add reference</para></listitem>
+<listitem><para>Remove reference</para></listitem>
+<listitem><para>Automatic deallocation</para></listitem>
+</itemizedlist>
+
+Our system also allows values to be defined with a type specified by a
+number, so that programs can determine dynamically what type of value
+is stored at each memory location.  Let's contrast this with traditional
+assembly language programming.  In traditional assembly language programming,
+you had to keep track of what type of value is in each memory location.
+Assembly language allows you to treat any value as any type.  Computers do
+not by default store such information - everything is stored as a bit string
+no matter what it is used for.  Therefore, our system allows us to think
+of values in terms that are more easily accessible to us.  Also, the memory
+allocator allows us to not have to worry about explicitly defining storage
+for each location - we have our memory management functions 
+<emphasis>allocate</emphasis> and <emphasis>deallocate</emphasis> doing that
+for us.  In fact, with our reference counting, we never even need to
+explicitly deallocate our memory - it will do that automatically when
+there are no more references to it.  However, there are two issues that
+arise with reference counting:
+
+<itemizedlist>
+<listitem><para>It takes time because you have to continually reference and dereference your values</para></listitem>
+<listitem><para>You must have a well-defined system for when you reference and dereference values.  Otherwise, you will accidentally either leave dead objects hanging around or free objects that are in use.</para></listitem>
+</itemizedlist>
+
+Our basic protocol for referencing and dereferencing values will be like this:
+
+<itemizedlist>
+<listitem><para>As soon as an object is directly visible to a section of code, it gets referenced.</para></listitem>
+<listitem><para>Just before an object is no longer directly visible to a section of code, it gets dereferenced.</para></listitem>
+<listitem><para>When passing parameters to a function, the code calling the function must add the reference count.</para></listitem>
+<listitem><para>When passing parameters to a function, the code calling the function must also decrease the reference count.</para></listitem>
+<listitem><para>The return value of a function should be referenced by the function itself</para></listitem>
+</itemizedlist>
+
+The purpose of these rules is to make absolutely certain that an object always has a reference count, and that the same code that adds the reference count removes it.  We also refer to "directly visible" objects.  What this means is that if we have an array of elements, when we can see the array, we add a reference count to the array as a whole.  If we access an individual element of the array, we add a reference count to that element only while we can see it individually.  When we stop looking at that element, we remove the reference count.
+</para>
+
+</sect1>
+
+<sect1>
+<title>Equivalency</title>
+
+<para>
+Before we implement some example values, one more topic we must cover is
+that of equivalency.  Being able to determine if two values are equivalent
+is of great importance.  However, there are many ways to determine equivalency.
+We will discuss three of them.
+</para>
+
+<variablelist>
+
+<varlistentry>
+<term>Reference Equivalency</term>
+<listitem><para>
+With reference equivalency, two values are the same if and only if they
+share the same memory location.  With reference equivalency, the numbers
+2 and 2 are not equivalent if they are stored in two different places.
+Reference equivalency work well because of its speed - all you have to
+do is compare pointers and you can be able to tell if your values are
+equal.  This is especially useful for complex structures.  
+</para>
+<para>
+Another use of reference equivalency is to find out if two complex
+structures are really the same structure.  Imagine that you are holding
+on to a can of cola.  Your friend is also holding an identical can of cola,
+both unopened.  You would use reference equivalency to see if you are each
+holding on to identical but separate cans, or both holding on to the
+same can.  If you are holding on to the same can, your cans are reference
+equivalent.
+</para></listitem>
+</varlistentry>
+
+<varlistentry>
+<term>Value Equivalency</term>
+<listitem><para>
+Value equivalency simply asks if two pieces of data are equivalent.  With
+value equivalency, 2 and 2 are always equivalent, even if they are stored
+in different locations.  Two lists are equivalent only if they are both
+the same length, and each location of the first list is value equivalent
+with the corresponding location of the second list.  Complex structures
+are compared element by element for value equivalency.  Note that all
+reference equivalent values are also value equivalent.
+</para></listitem>
+</varlistentry>
+
+<varlistentry>
+<term>Hybrid Equivalency</term>
+<listitem><para>
+Hybrid equivalency uses value equivalency for non-mutable values, and
+reference equivalency for mutable values.  For example, the number 2
+is always the number 2, therefore, for numbers, 2 is always hybrid
+equivalent with 2.  So what counts as a mutable value?  A mutable value
+is one that can change over time.  For example, elements of a list can
+change, so a list is a mutable value.  A person's personnel record can change 
+over time, so it is also considered mutable.  Mutable values are only
+hybrid equivalent if they are also reference equivalent.  Determining
+exactly what are and aren't mutable values is very implementation dependent.
+Because of this ambiguity, hybrid equivalency is not used often in this
+book.
+</para></listitem>
+</varlistentry>
+
+</variablelist>
+
+<para>
+
+In the system we are developing, no two values are equivalent if they
+are of a different type.  However, this need not be so.  Some values
+are of different types, but represent the same value in another type.
+Remember that types are simply sets of values, and a value can exist
+in more than one set.  Implementing this in value equivalency is 
+difficult, however, because different types often hold different value
+representations in memory, even if they are for the same value.  Therefore,
+we will assume in all cases that values of different types are different
+values.
+</para>
+
+</sect1>
+
+</chapter>

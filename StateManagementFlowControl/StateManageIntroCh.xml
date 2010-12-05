@@ -1,0 +1,109 @@
+<chapter>
+<title>Introduction to State Management</title>
+
+<para>
+The ability to manage the state of a complex program is one of the
+fundamental goals of a computer program.  As programs increase in
+size and complexity, keeping all variables and values in a consistent,
+valid state is a tough task.
+</para>
+
+<sect1>
+<title>State Described</title>
+
+<para>
+What is program state anyway?  Before we answer that question, let's look
+at the meaning of the word state in every day life.  What's your state
+of mind?  What is the state of your body?  The answers to these questions
+could be "Happy" and "Skinny" or "Crazy" and "Fat".  State is a description
+of what is going on at the present moment.  We could describe the state
+of your car using your car's global position, it's direction, it's velocity,
+and it's acceleration.  This would be a more technical description, and is
+more akin to what state is in programming.
+</para>
+
+<para>
+Note that when we described the car, we used descriptions that had specific
+measurements.  Also, our description parameters can be used to describe
+the car at any time - the car always has a position, direction, velocity,
+and acceleration, but the actual measurements of those things differ from
+time to time.  So we can say that the state of a car can be measured
+by four parameters - position, direction, velocity, and acceleration.
+In programming, these would probably be stored as independent variables,
+or stored together as a structure.
+</para>
+
+<para>
+In programming, state consists of all variables and values associated with
+your program, as well as the current instruction being executed.
+Programs usually have much more state involved than just four parameters.
+Imagine your last program - how many variables did you have to keep track
+of?  Each of these maintains a piece of the overall program state.  Many
+variables have to change together, many change independently of each other,
+and so on.  Each programming language has features to make managing this
+massive amount of state easier.  Some languages have records or structs to
+store pieces of state that are related to each other.  Other languages use
+objects or other strategies for state management.  You may not realize it,
+but variables are state management tools!  Your computer has no concept
+of variables - it only knows numbered storage locations.  Your programming
+language has added a name and possibly a type to that storage, making 
+your job of managing it that much easier.  As you can see, state management
+is one of the bigger problems in computer science, and one of the main
+reasons for programming languages.
+</para>
+
+</sect1>
+
+<sect1>
+<title>State Transitions</title>
+
+<para>
+One of the main problems with state management is managing state transitions.
+At different stages of your program, different variables may become active
+or inactive.  Also, changing one variable may need to cause one or more
+related variables to change.  Having to remember while programming to modify
+all of these variables accordingly is cumbersome and error-prone.  In addition,
+as dependencies are added you have to continually look throughout your
+program to find where variables need to be recalculated, and this too is
+very cumbersome and error-prone.  Programming languages are meant to help
+with these problems as well.
+</para>
+
+</sect1>
+
+<sect1>
+<title>Outline of State Management</title>
+
+<para>
+This part of the book will start out in assembly language, and we will start
+out by adding low-level state management facilities.  We will continue
+on by adding higher and higher-level facilities until we have the 
+functionality we need to implement a high-level programming language.
+</para>
+
+<para>
+Topics will include:
+
+<itemizedlist>
+<listitem><para>Memory Management</para></listitem>
+<listitem><para>Value Management</para></listitem>
+<listitem><para>Symbol Tables</para></listitem>
+<listitem><para>Advanced Symbol Table Techniques</para></listitem>
+</itemizedlist>
+
+</para>
+
+<para>
+The facilities we are developing will be useful for both assembly-language
+programmers who want to make use of higher-level facilities or for 
+programming language implementors who want to use these facilities as
+a runtime environment for their programming language.  Note, however,
+that the implementations used in this book are optimized for their teaching
+ability, not for their speed or their size.  In this book, we will eventually
+implement a complete interpretter for the programming language scheme.
+We use scheme because of its simple syntax and its flexibility.
+</para>
+
+</sect1>
+
+</chapter>

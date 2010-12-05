@@ -1,0 +1,862 @@
+<?xml version="1.0" ?>
+<!DOCTYPE chapter PUBLIC "-//OASIS//DTD DocBook XML V4.1.2//EN">
+<chapter>
+<title>Programming with Lists</title>
+
+<para>
+List processing is one of the computer's biggest strengths.  Singly linked lists 
+provide the basis for a number of interesting algorithms and techniques that are
+useful in every aspect of programming.
+</para>
+
+
+<sect1>
+<title>Linked List Refresher</title>
+
+<para>
+This article will discuss only singly linked lists, and the
+terms "linked lists" and "lists" will both
+be used to mean singly linked lists.
+</para>
+
+<para>
+A singly linked list is a data structure that has an ordered sequence of nodes, in which each node
+contains a data element and a pointer to the next node in the sequence.  Conceptually,
+a singly linked list of integers looks like this in the computer's memory:
+</para>
+
+<mediaobject>
+<imageobject>
+<imagedata fileref="linkedlistexample.png" format="PNG" />
+</imageobject>
+<caption><para><emphasis>An example of a linked list of numbers</emphasis></para></caption>
+</mediaobject>
+
+<para>
+The arrows in this diagram represent pointers to the location of the next node in memory.
+Notice that the order of the list is determined by the arrows, not by the memory locations
+of the nodes.  Finally, the last node in the sequence simply has a mark, instead of an arrow, 
+indicating that there are no more nodes in the list.  This marker is usually called the null value, the null list, or the null pointer.
+</para>
+
+<sect2>
+<title>The Structure of List Nodes</title>
+
+<para>
+Coding linked lists is fairly simple.  In C++, the Standard Template Library includes an implementation of 
+linked lists.  However, for the techniques we are going to learn, the Standard Template Library implementation
+is not adequate.  Really, linked lists are pretty simple.  For example, the linked lists of integers in the diagram above could be represented by the following node structure in C:
+</para>
+
+<example>
+<title>Basic linked list node structure</title>
+<programlisting>
+#define NULL 0
+struct ll_int_node {
+	int data;
+	struct ll_int_node *next;
+};
+</programlisting>
+</example>
+
+<para>
+Here we have a struct that includes the first element as a data item, and the second
+element as a pointer to the next node.  <literal>NULL</literal> is defined as simply
+a null pointer (0) because the null pointer is invalid as a pointer anyway.  To
+have a variable hold this kind of list in a program, all we have to do is have a pointer 
+that points to type <literal>struct ll_int_node</literal>. 
+This pointer will point to the first
+element (known as the head) of the list.
+</para>
+
+</sect2>
+
+<sect2>
+<title>Common List Operations</title>
+
+<para>
+There are two basic update operations performed in standard linked list
+implementations:
+</para>
+
+<itemizedlist>
+<listitem><para>Inserting a node into the list</para></listitem>
+<listitem><para>Removing a node from the list</para></listitem>
+</itemizedlist>
+
+<para>
+We are not going to spend much time analyzing these operations
+because our approach to linked lists will be from a different
+angle, which will be explained further on.
+However, these methods are fairly
+easily implemented by means of allocating/deallocating node structures, and then
+modifying the pointers so that the given node is correctly sequenced in the list.
+Conceptually, it's just a matter of moving the arrows.  Care must be taken, however,
+to ensure that the head of the list is properly updated when inserts or removals change the list head.
+</para>
+
+</sect2>
+
+<sect2>
+<title>A More Generic List Structure</title>
+
+<para>
+It would be quite a pain if we had to come up with a different list node structure for
+every type of data we wanted to store in lists, especially if
+we wanted to store multiple types of data in a single list.  Therefore, we are going
+to learn a more generic method of handling data.  This method
+will allow us to store any data type in any node.
+</para>
+
+<para>
+In order store arbitrary types of data within a node, we are going to define a structure that will be handled directly in the case of basic C data types, but will be handled via a pointer in cases of complex types.
+In order to accomplish this, we will use <emphasis>typetags</emphasis>.  A typetag is an integer variable
+where the value of the integer specifies the type of data 
+being handled.   For basic C data types, the typetag lets us know
+which data type is being used.  For complex data types we simply
+use a pointer, and the typetag lets us know which type of
+struct is being pointed to.
+Here is the structure definition:
+</para>
+
+<example>
+<title>Generic data type structure</title>
+<programlisting>
+typedef struct {
+	int typetag;
+	union {
+		long long_member;
+		double double_member;
+		char char_member;
+		void *pointer_member;
+	};
+} data;
+
+/* Example declaration */
+data my_data;
+</programlisting>
+</example>
+
+<para>
+In order to make this generic data structure useful, we have to come up with a typetag value for each type we
+want, including pointer types.  Here is a full program that uses typetags to display
+different types of data based on the typetag.
+</para>
+
+<example>
+<title>Example program using typetags</title>
+<programlisting>
+#include "stdio.h"
+
+/* Typetags for builtin types */
+#define TYPETAG_LONG 1
+#define TYPETAG_DOUBLE 2
+#define TYPETAG_CHAR 3
+
+/* The structure definition from before */
+typedef struct {
+	int typetag;
+	union {
+		long long_member;
+		double double_member;
+		char char_member;
+		void *pointer_member;
+	};
+} data;
+
+/* Example struct */
+struct person {
+	char name[200];
+	char address[200];
+};
+/* Typetag for a pointer to our struct */
+#define TYPETAG_PERSON_PTR 4
+
+void display(data d)
+{
+	if(d.typetag == TYPETAG_LONG)
+	{
+		printf("%d\n", d.long_member);
+	}
+	else if(d.typetag == TYPETAG_PERSON_PTR)
+	{
+		struct person *p = (struct person *)d.pointer_member;
+		printf("%s\n%s\n", p->name, p->address);
+	}
+	/* We could go on for each type, but this is good enough for an example */
+}
+
+int main()
+{
+	data my_data;
+	data more_data;
+	struct person *p;
+
+	/* Use the "long" type */
+	my_data.typetag = TYPETAG_LONG;
+	my_data.long_member = 3;
+
+	/* Use the "person" type */
+	p = (struct person *)malloc(sizeof(struct person));
+	strcpy(p->name, "Test");
+	strcpy(p->address, "Test's Address");
+
+	more_data.typetag = TYPETAG_PERSON_PTR;
+	more_data.pointer_member = p;
+
+	display(my_data);
+	display(more_data);
+
+	return 0;
+}
+</programlisting>
+</example>
+
+<para>
+If we wanted to be more object-oriented, we could also use the typetag to be an index to an array of vtables.  Although an in-depth treatment of such a typetag is beyond the scope of this article, it does, nevertheless, indicate the potential power of typetags.  Our more primitive version still provides you with the concept of a single data structure that can encompass any number of data types.
+</para>
+
+<para>
+Armed with this new generic data type, we can now make a very generic list node structure:
+</para>
+
+<example>
+<title>Linked list using generic nodes</title>
+<programlisting>
+struct generic_node {
+	data the_data;
+	struct generic_node *next;
+};
+</programlisting>
+</example>
+
+<para>
+With this generic list node structure, we can now define lists and list operations that work regardless of the
+type of data stored in them.  However, the typetag mechanism does incur a bit of 
+overhead, but it is usually worth it compared to the frustration of recoding list after
+list.  In C++, this overhead can be alleviated through templates.  In fact, if we create a generic
+base class (like Java's Object class), we can actually use just the typing mechanisms of the C++ language rather than custom-implemented typetags.
+That still falls a little short of the typetag mechanism, which does not have pointer overhead
+for basic types, but works well if we are dealing with complex types, or if we do not mind
+wrapping basic types in classes.
+</para>
+
+</sect2>
+
+<sect2>
+<title>Memory Management with Linked Lists</title>
+
+<para>
+In a <ulink url="http://www-106.ibm.com/developerworks/linux/library/l-memory/">previous article</ulink> various memory management techniques were discussed.  Although manual memory management with
+linked lists is possible, it is not very friendly.
+</para>
+
+<para>
+For example, when removing a node from a list, we have to remember to free the memory for the node structure.
+That's not too bad.  However, if the data portion of the node is a pointer or contains
+pointers, then we have a problem, especially if there is no
+clear, universal memory management policy in effect for the 
+program.  For example, if there is a policy that demands putting only <emphasis>copies</emphasis> of data structures, and not the original structures themselves,
+into lists, then we can safely free the memory.
+However, we will often want to increase speed and use less memory by just passing a
+shared pointer.  In that case, memory management becomes much more difficult.
+</para>
+
+<para>
+As a teaser, another issue with memory management involves the idea of partial sharing
+of list nodes, which will be discussed later.  If we are sharing nodes of a list, then removing
+a list element or even removing an entire list may not require us to free the memory if it is still in use elsewhere.
+</para>
+
+<para>
+Because of these issues with memory, the rest of the article will assume that a garbage
+collector with the programs.  Adding a garbage collector to a program is simple, and is
+discussed in detail in a <ulink url="http://www-106.ibm.com/developerworks/linux/library/l-memory/">previous article</ulink>.
+Adding a garbage collector allows us to share data structures willy-nilly without having to worry about memory management problems
+(and if you haven't shared data structures will-nilly, you're missing out).  Sharing
+data structures can lead to other problems if not done carefully, since whenever a data structure is shared through pointers, an update to that structure through any pointer will impact every pointer that points to that structure.
+</para>
+
+</sect2>
+
+</sect1>
+
+<sect1>
+<title>Advanced List Programming Using Shared Sublists</title>
+
+<para>
+Now that we have a handle on linked lists, 
+We need to be aware of a few interesting properties
+of lists that we will exploit:
+</para>
+
+<itemizedlist>
+<listitem><para>Because node structures go in only one direction, they know nothing about the sequence of nodes that precede them.</para></listitem>
+<listitem><para>Because nodes know nothing about the nodes that precede them, each node is itself the start of a list.</para></listitem>
+<listitem><para>Because nodes know nothing about the nodes that precede them, a given list may actually be a sublist for many other lists.</para></listitem>
+</itemizedlist>
+
+<para>
+Following are some examples to help us better understand these
+properties of lists:
+</para>
+
+
+<mediaobject>
+<imageobject>
+<imagedata fileref="sharedlistexamples.png" format="PNG" />
+</imageobject>
+<caption><para><emphasis>Examples of List Sharing</emphasis></para></caption>
+</mediaobject>
+
+
+<para>
+In this diagram, there are three lists.  The first list is the
+sequence <literal>(1 57 26 9)</literal>.  From now on, we are going to
+write our lists in parentheses to make them easier to read.  Now,
+this list contains several sublists.  One in particular was marked
+out in the diagram as <literal>(57 26 9)</literal>.  However, 
+<literal>(26 9)</literal>, <literal>(9)</literal> and
+<literal>()</literal> are all also valid
+sublists of the first list.  The last one, <literal>()</literal>
+is used to refer to the empty list, or null list.  
+Because the arrows for the nodes 
+point in only one direction, no modification to the data has to be made to use
+a sublist.
+</para>
+
+<para>
+In addition to plain sublists, the diagram also gives an example of
+shared sublists.  The list <literal>(18 32 26 9)</literal> is actually
+sharing the last two nodes with our original list.  This means that
+any changes to the original list will affect this one as well.  Therefore,
+this list does not require additional memory for the
+last two nodes.  In addition, this list may be a sublist for other
+lists, and other lists may also use <literal>(26 9)</literal> as a
+sublist.  As mentioned earlier, to take advantage of shared lists,
+we will definitely need a memory management strategy -- probably
+garbage collection.
+</para>
+
+<sect2>
+<title>Using Sublists to Avoid Locking</title>
+
+<para>
+One advantage of linked lists is that we can use them to avoid
+locking situations.  For example, suppose we are programming a
+game.  For this game, we maintain a list of every drawable object and
+have the drawing thread running independently of the game thread.
+Now, during the game we may need to add or remove objects from this
+list from time to time.  While removing objects from the list requires
+locking the list, adding items (like fired bullets) to the list does
+not require locking if we add the items to the front of the list.  The drawing thread
+can simply iterate through the list of objects without worry because
+we know that even if game objects are added during the drawing period,
+they will not affect the nodes that are currently being drawn.  What
+we are drawing will simply be a sublist of the new objects list.
+</para>
+
+<para>
+This technique is effective anytime there is an unordered collection
+that has to frequently be both iterated through and appended to.  As
+long as we append to the front of the list,  we won't even have to 
+touch the existing list structure, allowing other threads to iterate
+through it freely.  Note, however, that if we added elements to
+the end of the list, rather than at the front, we would be directly
+modifying the list structure itself. This could result in race
+conditions if one thread is adding to the end of the list while another is
+iterating through it.
+</para>
+
+</sect2>
+
+<sect2>
+<title>Using Shared Sublists for Undo Operations</title>
+
+<para>
+Shared sublists are quite useful for a number of applications, one of
+which is undo operations.  If we structure a document as an
+append-only linked list, it allows us to easily revert changes
+back to previous states.  For example, our document would look like
+this: <literal>(modification3 modification2 modification1 original-document)</literal>.
+This arrangement allows us to undo any change simply by moving the head of the list to a sublist.
+Hitting undo twice would cause the document to look like this:
+<literal>(modification1 original-document)</literal>.  We can also do multiple versions
+of documents by creating branches that share a document from a specified point.  This
+is the idea behind branches in CVS, for example.  We might have 
+<literal>(branch-modification2 branch-modification1 modification1 original-document)</literal>
+as a different set of modifications to the original document, as well as the set of modifications we were working with earlier.
+</para>
+
+</sect2>
+
+<sect2>
+<title>Using Lists to Represent Trees</title>
+
+<para>
+Lists can also be used to represent multi-noded trees.  Binary trees are represented by nodes that have a data value and a
+left and right pointer.  However, there are many data structures that  require trees with more than just a left and right
+branch, and lists are excellent representations of such trees.
+</para>
+
+<para>
+It may appear that our list structure can handle only linearly sequenced values, but they can also handle "inverted trees" by using shared sublists. 
+However, this is not what we are talking about here.  If we have multiple lists sharing the same sublist, it looks like a tree graphically, but
+because the lists only go in a straight sequence, we cannot access the other branches from any other branch.  Therefore, to represent true
+trees we will need    a different method.
+</para>
+
+<para>
+We talked earlier about how to use tagged types to enable us to use any type of data in our node.  Using that concept, we can
+also store pointers to list nodes in our node, allowing us to have lists as the data for a list node.  Here's how it might look:
+</para>
+
+
+<mediaobject>
+<imageobject>
+<imagedata fileref="listtreeexample.png" format="PNG" />
+</imageobject>
+<caption><para><emphasis>An example of a tree using linked lists</emphasis></para></caption>
+</mediaobject>
+
+<para>
+Each node can be either a branch or a leaf.  We can represent this using our parenthetic notation by simply using lists as values
+within our list.  The previous diagram would be represented this way: <literal>(((15 42) 22 18) 32 (6 2))</literal>.  A moment's
+examination reveals that it is really just a list of three elements -- <literal>(element1 element2 element3)</literal> -- in which <literal>element1</literal>
+is a list, <literal>element2</literal> is the number 32, and <literal>element3</literal> is the list <literal>(6 2)</literal>.  The list for <literal>element1</literal>
+is itself a tree, in which the first element is the list <literal>(15 42)</literal>, and the remaining two elements are <literal>22</literal> and <literal>18</literal>.
+Using lists of lists, therefore, we can represent trees that have any number of branches and leaves.
+</para>
+
+</sect2>
+
+<sect2>
+<title>Using Trees to Represent Syntax</title>
+
+<para>
+One great use of trees is representing the syntax of computer languages.  A computer languages can be viewed as a hierarchical tree of language
+constructs.  At the top is the whole program.  This program is composed of an arbitrary number of statements composed of an arbitrary number
+of expressions, which are themselves composed of an arbitrary number of expressions.  Thus, trees (specifically mult-inode trees) are ideal for representing
+computer languages.
+</para>
+
+<para>
+As a quick example, let's examine the parsing of an <literal>if</literal> statement, whose syntax look like this:
+</para>
+
+<example>
+<title>Example syntax for an if statement</title>
+<programlisting>
+if(x > y)
+{
+	call_some_function(a, b, c);
+}
+</programlisting>
+</example>
+
+<para>
+In our representation, the first element of each list will represent the language operator, action, or function call, and the remaining elements represent the arguments.
+The parse tree for this might look something like this:
+</para>
+
+<mediaobject>
+<imageobject>
+<imagedata fileref="ifparse.png" format="PNG" />
+</imageobject>
+<caption><para><emphasis>An example of a parse tree using linked lists</emphasis></para></caption>
+</mediaobject>
+
+<para>
+We would write this out as <literal>(if (> x y) (call_some_function a b c))</literal>.  Note that we always list the operators/functions first because when processing
+the parse tree, we need to know what the operator or function we are dealing with before knowing how to handle the arguments.
+</para>
+
+<para>
+What's really interesting is that a large part of the parse trees of different languages are actually very similar.  Most languages parse if statements and function
+calls in basically the same way.  It would be really interesting, though,  if there were a language that operated directly on parse trees.  In fact, there is one, and it is covered in the next section.
+</para>
+
+</sect2>
+
+</sect1>
+
+<sect1>
+<title>A Language for List Manipulation</title>
+
+<para>
+So far, we have discussed several interesting features of lists and list manipulation:
+</para>
+
+<itemizedlist>
+<listitem><para>Using a list node data structure for lists</para></listitem>
+<listitem><para>Using typetags to allow list nodes and variables to store data of any arbitrary type</para></listitem>
+<listitem><para>Sharing lists and using sublists</para></listitem>
+<listitem><para>Using garbage collection to simplify memory management for lists</para></listitem>
+<listitem><para>Representing lists in parenthetical notation</para></listitem>
+</itemizedlist>
+
+<para>
+While all of these are beneficial, they are somewhat tedious to actually pull off in the C programming language.  
+Assigning typetags, assigning data to the appropriate member of the union, and manually processing list nodes can
+all be tedious procedures.
+Using garbage collection can be easy or difficult depending on the garbage collector in use.
+Parenthetical notation is nice, but it can't be used in the C language.  It would be great if a programming language could
+take all these techniques and make them an integral part of the language.  
+</para>
+
+<para>
+Thankfully, that has already been done, and the language is Lisp.  Unfortunately, Lisp is a <emphasis>huge</emphasis> 
+language.
+There is, however, a derivative of Lisp called Scheme that is both powerful and extremely simple.  In fact, the standard
+document, including the index, is only 50 pages.
+</para>
+
+<sect2>
+<title>A Quick Introduction to Scheme Syntax</title>
+
+<para>
+Scheme is almost entirely based on lists.  Scheme data comes in two varieties, atoms and lists.  There are also vectors, but they
+will not be discussed.  An atom is a basic piece of data 
+like a number, a string, or a character.  Lists are linked lists of atoms, lists, or both.  Even the programs written in Scheme
+are merely lists that happen to also be parse trees, like the ones we played with previously.  In fact, the example parse tree we looked at previously is almost a valid scheme program.
+</para>
+
+<para>
+Let's give a concrete, runnable scheme program: <literal>(if (> 7 5) (display "Hello There!\n"))</literal>
+</para>
+
+<para>
+This program will compare 7 and 5, and because 7 is greater than 5, it will print "hello there!" to the screen.
+To run a scheme program, we need a Scheme interpretter.  If we are running Linux, we probably have the GUILE
+Scheme interpretter installed.  To run a scheme program using GUILE, just type in <literal>guile -s filename.scm</literal>.
+</para>
+
+</sect2>
+
+<sect2>
+<title>Defining and Using Variables with Scheme</title>
+
+<para>
+A scheme program is just a collection of lists.  Each list is a parse tree that is run through Scheme's evaluator to
+produce a result.  The evaluator has four basic cases that it handles:
+</para>
+
+<itemizedlist>
+<listitem><para>Is the data a variable name?  If so, then look up the variable and return the value.  In the case of function names, this returns the function.</para></listitem>
+<listitem><para>Is the data a list?  If not, then it is just a constant value, so return it.</para></listitem>
+<listitem><para>Is the first element of the list the name of a <emphasis>special form</emphasis> (an operator that isn't a function)?  If so, then run the evaluator's internal procedure for that special form, and return the result.</para></listitem>
+<listitem><para>Otherwise, run the evaluator on each element of the list.  The first element must evaluate to a function, and that function is called with the remaining list elements as arguments. The result of the function is returned as the result.</para></listitem>
+</itemizedlist>
+
+<para>
+First, then, we'll look at the special form used to define variable names, appropriately called <literal>define</literal>.  Define statements look like this: <literal>(define variablename value)</literal>.  Subsequent changes to the variable are done using the <literal>set!</literal> special form.  It works just like <literal>define</literal> but is used after a variable is already defined.  To try
+out these special forms, let's try entering and running the following program:
+</para>
+
+<example>
+<title>Defining variable names in Scheme</title>
+<programlisting>
+(define x 200) ;Sets x to be 200
+(define y x) ;Sets y to be x, which is evaluated to 200
+(define a 50) ;Sets a to be 50
+(define b a) ;Sets b to be a, which is evaluted to 50
+(set! b 300) ;Sets b to be 300.  Note that this does not affect the value of a
+(display "x is ") ;display displays its argument, a string in this case
+(display x) ;here, x is evaluated, and its result is displayed
+(newline) ;newline just prints a newline
+(display "y is ") ;now we are doing the same for the other variables
+(display y)
+(newline)
+(display "a is ")
+(display a)
+(newline)
+(display "b is ")
+(display b)
+(newline)
+</programlisting>
+</example>
+
+<para>
+As is obvious from its name, <literal>display</literal> is a function that prints out its argument, and <literal>newline</literal> is a function that simply prints out an end-of-line character.
+</para>
+
+<para>
+We can use any expression that we want as a value.  For example, we can use the addition function (called <literal>+</literal> in Scheme) to calculate values.  We can even include the
+<literal>if</literal> special form as part of an expression.  Here is another code example using these concepts:
+</para>
+
+<example>
+<title>Example program using more complex Scheme expressions</title>
+<programlisting>
+(define a 20) 
+(define b (+ 20 a)) ;b is given the result of (+ 20 a).  Remember that the function name is always listed first in the list
+(define c (if (> b a) b a)) ;read this as "if b is greater than a then b else a"
+(define d (if (eq? c b) "B and C are equal" "B and C are not equal"))
+(set! a (+ a a a)) ;a is tripled, and then a is set to the resulting value
+(display "a is ") ;now we're just printing out all our variables
+(display a)
+(newline)
+(display "b is ")
+(display b)
+(newline)
+(display "c is ")
+(display c)
+(newline)
+(display "d is ")
+(display d)
+(newline)
+</programlisting>
+</example>
+
+<para>
+Notice how we can stick any type of data into any variable.  In the previous program, we used both integer and string data, and never had
+to tell the Scheme language what type of data was being used.  Internally, Scheme uses typetags to differentiate between the different types of data.
+</para>
+
+</sect2>
+
+<sect2>
+<title>Creating Lists with Scheme</title>
+
+<para>
+Of course, the whole reason for using Scheme in the first place is to handle list manipulations.  In Scheme, list nodes are called <emphasis>pairs</emphasis>.  They
+are slightly different from the node structures we looked at in C, because the bottom half of a pair doesn't have to be a pointer to a list node.  But for our purposes, we will use pairs exactly as we use list nodes.
+</para>
+
+<para>
+Scheme defines a list as being either:
+</para>
+
+<itemizedlist>
+<listitem><para>The null list</para></listitem>
+<listitem><para>A pair whose bottom half is a list</para></listitem>
+</itemizedlist>
+
+<para>
+This means that the bottom half of a pair used in a list will always point to a list.  We know we're at the end of a list when we hit the
+null list, written as <literal>()</literal>.
+</para>
+
+<para>
+To create a list node in Scheme, we use the <literal>cons</literal> function.
+<literal>cons</literal> (which stands for <emphasis>construct</emphasis>)  takes two arguments, the node data and the list that the bottom half of the pair will point to.  If we are just starting a list, then we will use the
+null list.  For example:
+</para>
+
+<example>
+<title>Example program using <literal>cons</literal> and the null list</title>
+<programlisting>
+(define myfirstschemelist (cons 23 '()))
+</programlisting>
+</example>
+
+<para>
+<literal>cons</literal> is like a specialized malloc for Scheme pairs.  In addition, since Scheme is garbage collected, we never have to worry about 
+freeing the pair.  Once we stop using the pair, the Scheme runtime will take care of cleaning the pair up for us.
+</para>
+
+<para>
+The single quotation mark in front of the null list is used to tell Scheme that we are using <literal>()</literal> as data and not as a part of our parse tree.
+</para>
+
+<para>
+Following is a program in Scheme that demonstrates how to create a list of the numbers 3, 4, and 5:
+</para>
+
+<example>
+<title>Example program showing list construction</title>
+<programlisting>
+(define mylist '()) ;The null list is a list
+(set! mylist (cons 5 mylist)) ;This constructs a new node with 5 as the data, and set! makes mylist now point to the new node
+(set! mylist (cons 3 (cons 4 mylist))) ;This constructs two nodes in one statement.  The result of the second cons is used as the second argument of the first cons.
+(display mylist) ; lets see what we've created!
+(newline)
+</programlisting>
+</example>
+
+<para>
+Here we are going to demonstrate how this can be used to create shared sublists:
+</para>
+
+<example>
+<title>Example program demonstrating sublists</title>
+<programlisting>
+(define a '(1 2 3)) ;remember, ' means to treat the list as data, so now the variable a contains (1 2 3)
+(define b (cons "Hello" a)) ;remember, each list element can be of any type. 
+(define c (cons 55 a)) ;Lists b and c are now both sharing list a as a sublist
+(define d (cons 23 (cons "My name is Fred" (cons 22.5 b)))) ;This shared list b, which shares list a
+;Let's print them out
+(display "a is ")
+(display a)
+(newline)
+(display "b is ")
+(display b)
+(newline)
+(display "c is ")
+(display c)
+(newline)
+(display "d is ")
+(display d)
+(newline)
+</programlisting>
+</example>
+
+<para>
+To avoid confusion, it might be worthwhile to draw out each list node.  Remember, <literal>cons</literal> creates list nodes.
+</para>
+
+<para>
+Now, in order for lists to be useful, we have to be able to retrieve the data.  The function to retrieve the data from the first
+element of a list is called <literal>car</literal> (a name which is a holdover from an ancient assembly language instruction).  To
+retrieve the next node of a list, we need to use the function <literal>cdr</literal>. Note that this retrieves the entire node, not just
+the value -- to get the value we would have to do a <literal>car</literal> on the result).
+</para>
+
+<para>
+Adding the following code to the previous program will show how <literal>car</literal> and <literal>cdr</literal> can be used:
+</para>
+
+<example>
+<title>Example program demonstrating the use of <literal>car</literal> and <literal>cdr</literal></title>
+<programlisting>
+(define e (car d)) ;e now has the data of the first node of d
+(define f (cdr d)) ;f now has the list starting AFTER the first node of d
+(define g (car (cdr d))) ;g now has the data of the second node of d
+(define h (car (cdr (cdr (cdr (cdr d)))))) ;h now has hte data of the 5th node of d
+(define i (cdr (cdr (cdr (cdr d))))) ;i now has the 4th sublist of d
+
+(display "e is ")
+(display e)
+(newline)
+(display "f is ")
+(display f)
+(newline)
+(display "g is ")
+(display g)
+(newline)
+(display "h is ")
+(display h)
+(newline)
+(display "i is ")
+(display i)
+(newline)]
+</programlisting>
+</example>
+
+</sect2>
+
+<sect2>
+<title>Iterating Through Lists in Scheme</title>
+
+<para>
+In addition to the normal control structures available in other languages, Scheme has some
+special control structures that deal specifically with lists.  The most important of these is <literal>map</literal>,
+which applies a function to every element of a list.  It is called like this:
+<literal>(map function list-to-process)</literal>.  Therefore, in order to use <literal>map</literal>,
+we have to know how to define functions.  In Scheme, functions are defined by the use of the <literal>lambda</literal>
+special form, which creates and returns a nameless procedure.  The returned procedure can be given a name
+by the use of <literal>define</literal>, or it can simply be used in place.  The first argument to <literal>lambda</literal> is
+the list of arguments the function can take.  The remaining arguments to <literal>lambda</literal> are the
+expressions to be evaluated when the function is called.
+</para>
+
+<para>
+Let's write a short function to add 2 to every element of a list and return the resulting list:
+</para>
+
+<example>
+<title>Example program to demonstrate list iteration in Scheme</title>
+<programlisting>
+(define my-list '(1 2 3)) ;our original list
+(define new-list 
+  (map
+    (lambda (x)   ;(x) is the argument list -- this takes one argument, called x
+      (+ x 2)     ;add 2 to x and return the value
+    )
+    my-list       ;this is the list to run it on.
+  )
+)
+
+(display "the original list is ")
+(display my-list)
+(newline)
+(display "the resulting list is ")
+(display new-list)
+(newline)
+</programlisting>
+</example>
+
+<para>
+As we can see, this creates a brand new list that is the result of applying our function to every element of the original list.  
+In addition, it leaves the original list unchanged.
+</para>
+
+<para>
+As mentioned, we can also name our functions so that they can be used repeatedly:
+</para>
+
+<example>
+<title>Example program demonstrating creating and naming functions in Scheme</title>
+<programlisting>
+(define addtwo (lambda (x) (+ x 2)))
+(display (addtwo 5))
+(newline)
+(display (map addtwo '(3 4 5)))
+(newline)
+</programlisting>
+</example>
+
+<para>
+In most programming languages, defining and naming functions
+are the same operation.  However, Scheme splits it up into
+two separate procedures.  <literal>lambda</literal> defines
+the function and <literal>define</literal> gives it a name.
+</para>
+
+<para>
+Scheme generally provides the programmer the most basic
+building blocks of programs, and allows programmers to combine
+them in unique and unusual ways.  The separation of creating
+and naming functions, for instance, allows the Scheme 
+programmer to create and use anonymous functions anywhere
+within their code, while still leaving normal, named functions
+easily coded.
+</para>
+
+<para>
+The Scheme language, while being a rich and powerful language for list manipulation, is still easy to understand and grasp.  This has
+been just a primer, to provide a taste of how easy list manipulation is in list-oriented languages like Scheme.  We have achieved all the power of our C implementation without any of the difficulties of managing C structures or C memory or of dealing directly with typetags.
+</para>
+</sect2>
+
+</sect1>
+
+<sect1>
+<title>Conclusion</title>
+
+<para>
+Singly linked lists are a very powerful abstraction that allow us to represent numerous types of data.  Extending
+lists to handle arbitrary data types, to enable garbage collection, and to manipulate using list-oriented syntax can provide a powerful paradigm of processing
+data.  When used with the list-oriented programming languages like Scheme, lists become not only 
+a powerful tool, but extremely easy to use.
+</para>
+
+</sect1>
+
+<!-- RESOURCES
+
+<ul>
+	<li>The Staford CS department has <a href="http://cslibrary.stanford.edu/103/">a great introduction</a> to Linked Lists.</li>
+	<li>The NIST Dictionary of Algorithms and Data Structures has an <a href="http://www.nist.gov/dads/HTML/linkedList.html">entry for linked lists</a>.</li>
+	<li>Section 2.2, "Linear Lists" from <a href="http://devworks.krcinfo.com/WebForms/ProductDetails.aspx?ProductID=0201896834"><i>Fundamental Algorithms</i></a>, volume 1 of <i>The Art of Computer Programming</i> by Donald Knuth thoroughly describes linked lists and their operations. Section 2.3 discusses all manners of trees.</li>
+	<li>Gtk+ has a system very similar to the type tag mechanism we discussed, called <a href="http://developer.gnome.org/doc/GGAD/sec-gtkarg.html">GtkArg</a>s.  They are called <a href="http://developer.gimp.org/api/2.0/gobject/gobject-Generic-values.html">GValues</a> in the 2.x API.  The <a href="http://developer.gimp.org/api/2.0/gobject/gobject-Type-Information.html">GType</a> API information is also useful.</li>
+	<li><a href="http://download.plt-scheme.org/doc/103p1/html/insidemz/node9.htm">MzScheme's type tag implementation</a> is faster and more compact when using integers.</li>
+	<li><a href="http://www.htdp.org/"><i>How to Design Programs</i></a> by Felleisen et. al. is a wonderful book on Scheme programming for beginners, which really teaches how to think like a Scheme programmer.  Also available as a <a href="http://www.amazon.com/exec/obidos/ASIN/0262062186/freeeducation-20/">hardcover book</a>.</li>
+	<li><a href="http://www.ccs.neu.edu/home/dorai/t-y-scheme/t-y-scheme.html">Teach Yourself Scheme in Fixnum Days</a> is a great online tutorial of the scheme language, and includes both introductory and advanced concepts.</li>
+	<li><a href="http://www.schemers.org/Documents/Standards/R5RS/">The Scheme R5RS standard</a> describes how most scheme implementations work.</li>
+	<li><a href="http://www.amazon.com/exec/obidos/ASIN/0262062178/freeeducation-20/"><i>Essentials of Programming Languages</i></a> by Friedman et. al. expands the concept of using the Scheme language as an executable metalanguage (as in the parse tree example) for other programming languages.</li>
+</ul>
+
+-->
+
+</chapter>

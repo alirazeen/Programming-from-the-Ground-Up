@@ -1,0 +1,44 @@
+Reflection (Microsoft "Emit")
+Laziness, Impatience, Hubris
+Here Documents
+Community/CPAN
+"it" ($_)
+Autovivification
+Anonymous Inner Classes for Event Handlers
+Object serialization
+Automatic persistent objects
+Embedded Documentation (advanced documentation even)
+Regexps integrated into the language
+Pattern-matching function parameters
+String Handling
+Perl's Taint Mode
+Prolog's Unification (similar to (amb)?)
+New Toplevel Environments for unsafe code execution
+multimethods
+MOP
+"with"
+auto-typing (ML) / type inference / sums/products
+CLOS
+foreach
+RAII - Resource Acquisition Is Initialization
+Similar topic - Destructors
+Mathematica - redefining specific instances of an expression
+Named Parameters
+Ternary Operator
+
+Advogato answers:
+Easy prebuilt efficient hash/list libraries
+Auto variable type conversion
+Interactivity and introspection
+Matlab's bulk operators on tensors?
+Program-Generating Programs - rpcgen, bison, flex
+
+
+
+Languages to look into:
+  Boost
+  Ruby
+  Objective CAML
+  Forth
+  Postscript
+  Prolog

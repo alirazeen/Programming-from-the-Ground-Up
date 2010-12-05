@@ -1,0 +1,560 @@
+<?xml version="1.0" encoding="iso-1252" ?>
+<chapter>
+<title>The Art of Loading and Storing on PowerPC</title>
+
+<para>
+In the previous article, we gave a short outline to assembly language programming and the PowerPC instruction set.  In this article, we are going to drill down and discuss the specifics of PowerPC assembly language programming, focusing on data access methods and position-independent code.
+</para>
+
+<sect1>
+<title>Adddressing Modes and Why They are Important</title>
+
+<para>
+Before discussing addressing modes, a review of computer memory concepts is warranted.  The following facts about computer memory and programming are probably already well-known to you, but as modern programming languages attempt to de-emphasize the physical aspects of the computer, they should serve as a good refresher:
+</para>
+
+<itemizedlist>
+<listitem><para>Every location in main memory is numbered with a sequential numeric <emphasis>address</emphasis> by which the memory location is referred.</para></listitem>
+<listitem><para>Every main memory location is one byte long.</para></listitem>
+<listitem><para>Larger data types are made by simply treating multiple bytes as a single unit (using two memory locations together for a 16-bit number, for instance)</para></listitem>
+<listitem><para>Registers are 4-bytes long on 32-bit platforms, and 8-bytes long on 64-bit platforms</para></listitem>
+<listitem><para>Memory can be loaded into registers either 1, 2, 4, or 8 bytes at a time</para></listitem>
+<listitem><para>Non-numeric data is stored as numeric data -- the only differences are what operations are used on it and how the data is used</para></listitem>
+</itemizedlist>
+
+<para>
+It sometimes comes as a surprise to new assembly-language programmers how many different methods there are of accessing memory.  These different methods are called <emphasis>addressing modes</emphasis>.  Different people have different names for address modes, so in other literature the names of these modes may be different.  First we'll discuss the modes themselves, then we'll talk about how they relate to the PowerPC.  Some modes are logically equivalent, but differ in their purpose.  They are considered different addressing modes because they may be implemented differently based on the processor.  
+</para>
+
+<para>
+There are actually two addressing modes that don't access memory at all.  In <emphasis>immediate mode</emphasis>, the data to be used is part of the instruction (for example, the <literal>li</literal> instruction stands for "load immediate", because the number to be loaded is <emphasis>part of the instruction itself</emphasis>).  In <emphasis>register mode</emphasis>, rather than accessing the contents of main memory, you access registers.
+</para>
+
+<para>
+The most obvious addressing mode for accessing main memory is called <emphasis>direct addressing mode</emphasis>.  In this mode, the instruction itself contains the address to load the data from.  This mode is often used for accessing global variable access, branching, and subroutine calls.  A similar mode is <emphasis>relative addressing mode</emphasis>, which calculates the address based on the current program counter.  This is often used for short-range branches where the destination is near the current location, so specifying an offset rather than an absolute address makes more sense.  It is similar to direct addressing mode in that, in both types of addressing, the final address is known at either assemble or link time.
+</para>
+
+<para>
+The <emphasis>indexed addressing mode</emphasis> makes most sense when thought of as a way to access array elements for global variables.  It has two parts - a memory address and an <emphasis>index register</emphasis>.  The index register is added to the specified address, and the result is used as the address to use for the memory access.  Some platforms (not PowerPC) allow programmers to specify a <emphasis>multiplier</emphasis> for the index register.   Therefore, if each array element is 8-bytes long, you can use 8 as a multiplier.  This allows the index register to be used exactly like an array index.  Otherwise, the index register would have to be increased/decreased in increments of the data size.
+</para>
+
+<para>
+The <emphasis>register indirect addressing mode</emphasis> uses a register to specify the whole address for the memory access.  This is used for numerous situations, including, but not limitted to:
+</para>
+
+<itemizedlist>
+<!-- FIXME - more? -->
+<listitem><para>Dereferencing pointer variables</para></listitem>
+<listitem><para>Any memory access which is not available by other modes (the address can be calculated by other means and store in the register, which is then used for the access)</para></listitem>
+</itemizedlist>
+
+<para>
+<emphasis>Base-pointer addressing mode</emphasis> acts just like indexed addressing mode (the specified number and the register are added together for the final address), except that the function of the two components are switched.  In base-pointer addressing mode, the register has the base address and the literal number has the offset.  This is very useful for accessing members of a struct.  The register can hold the address of the whole struct, and the numeric portion can be modified depending on the structure member to be accessed.  For instance, let's say that we have a struct that has three fields -- the first is 8-bytes, the second is 4-bytes and the last is 8-bytes.  Then, let's say that the address of the struct itself is in a register we'll call register X.  If we want to access the second member of the structure, we'll need to add 8 to the value in the register.  So, using base-pointer addressing, we would specify register X as the base pointer and 8 as the offset.  To access the third field we would specify register X as the base pointer and 12 as the offset.  To access the first field we can actually use indirect addressing instead of base-pointer addressing since there is no offset (this is why on many platforms the first structure member is the fastest to access -- you can use a simpler addressing mode -- in PowerPC it does not matter).
+</para>
+
+<para>
+Finally, in <emphasis>indexed register indirect addressing mode</emphasis>, both the base and the index are stored in registers.  The memory address used is determined by adding the two registers together.
+</para>
+
+</sect1>
+
+<sect1>
+<title>The Importance of Instruction formats</title>
+
+<para>
+In order to discuss the details of how addressing modes work for load and store instructions on PowerPC processors, we must first understand a little bit about the PowerPC instruction format.  The PowerPC uses a load/store (also called RISC) instruction set, which means that the <emphasis>only</emphasis> time it accesses main memory is for loading into registers or copying a register to memory.  All of the actual processing takes place <emphasis>between registers</emphasis> (or between registers and immediate-mode operands).  The other main type of processor architecture, CISC (the x86 processor being a popular CISC instruction set), allows for memory access in nearly every instruction.  The reason for the load/store architecture is that it allows the rest of the processor to be more efficient.  In fact, most modern CISC processors actually translate their instructions to an internalized RISC format for efficiency.
+</para>
+
+<para>
+Each instruction on the PowerPC is exactly 32 bits long, with the instruction's <emphasis>opcode</emphasis> (the code telling the processor which instruction it is) taking the first six bits.  This 32-bit length includes all immediate-mode values, register references, explicit addresses, and instruction options.  This makes for a pretty small squeeze.  In fact, the largest length available for a memory address to any instruction format is only 24 bits!  This would give you, at most, only 16MB of addressable space.  Don't worry -- there's lots of ways around this.  This is just to point out why instruction format matters on the PowerPC processor -- you need to know how much space you have to work with!
+</para>
+
+<para>
+You don't need to memorize all of the instruction formats to make use of them.  However, knowing some of the basic ones will help you read PowerPC documentation and understand some of the general strategies and nuances used in the PowerPC instruction set.  The PowerPC has 15 different instruction formats, many with several subformats.  However, we only need to be concerned with a few of them.  
+</para>
+
+</sect1>
+
+<sect1>
+<title>Addressing Memory using The D-Form and DS-Form Instruction Formats</title>
+
+<para>
+The D-Form instruction is one of the primary memory-access instruction forms.  It looks like this:
+</para>
+
+<variablelist>
+<title>The D-Form Instruction Format</title>
+<varlistentry>
+<term>Bits 0-5</term>
+<listitem><para>Opcode</para></listitem>
+</varlistentry>
+<varlistentry>
+<term>Bits 6-10</term>
+<listitem><para>Source/Target Register</para></listitem>
+</varlistentry>
+<varlistentry>
+<term>Bits 11-16</term>
+<listitem><para>Address/Index Register/Operand</para></listitem>
+</varlistentry>
+<varlistentry>
+<term>Bits 16-31</term>
+<listitem><para>Numeric Address, Offset, or Immediate-mode Value</para></listitem>
+</varlistentry>
+</variablelist>
+
+<para>
+This form is used to perform loads, stores, and immediate-mode calculations.  It can be used for the following addressing modes:
+</para>
+
+<itemizedlist>
+<listitem><para>Immediate addressing mode</para></listitem>
+<listitem><para>Direct addressing mode (by specifying zero for the address/index register)</para></listitem>
+<listitem><para>Indexed addressing mode</para></listitem>
+<listitem><para>Indirect addressing mode (by specifying zero for the address)</para></listitem>
+<listitem><para>Base pointer addressing mode</para></listitem>
+</itemizedlist>
+
+<para>
+As you can see, the D-Form instruction is very flexible, and is used for any register-plus-address memory access form.  However, it's usability for direct addressing and indexed addressing is extremely limitted, because it only has a 16-bit address field to work with!  This gives a maximum range of only 64K.  Therefore, the direct and indexed addressing modes are only rarely used to fetch and store memory.  Instead, this form is much more often used for immediate, indirect, and base-pointer addressing modes, because in these addressing modes the 64K limit is not nearly as problematic because the base register can have the full 64 bit range.
+</para>
+
+<para>
+The DS-Form is only used in 64-bit instructions.  It is just like the D-Form, except that it uses the last two bits of the address for an extended opcode.  However, it pads the Value portion of the address to the right with two zeroes.  This gives it the same range as D-Form instructions (64K), but limits it to 32-bit aligned memory.  For the assembler, the value is specified normally -- it is simply condensed by the assembler.  For example, if you wanted an offset of 8, you would still enter 8, the assembler would just convert the value to the bit representation 0b000000000010 instead of 0b00000000001000.  if you entered a value that was not a multiple of 4, the assembler would give an error.
+</para>
+
+<para>
+Note that in D-Form and DS-Form instructions, if the source register is set to 0, instead of using register 0 it simply does not use the register parameter.  
+</para>
+
+<para>
+Let's now look at instructions built from D-Forms and DS-Forms.
+</para>
+
+<para>
+Immediate-mode instructions are specified in assembler like this:
+</para>
+
+<programlisting>
+opcode dst, src, value
+</programlisting>
+
+<para>
+Here <literal>dst</literal> is the destination register, <literal>src</literal> is a source register (used in computation) and <literal>value</literal> is the immediate-mode value used.  Immediate-mode instructions never use the DS-Form.  Here are some immediate-mode instructions:
+</para>
+
+<example>
+<title>Immediate-mode instructions</title>
+<programlisting>
+#Add the contents of register 3 to the number 25 and store in register 2
+addi 2, 3, 25    
+
+#OR the contents of register 6 to the number 0b0000000000000001 and store in register 3
+ori 3, 6, 0b00000000000001
+
+#Move the number 55 into register 7 
+#(remember, when 0 is the second register in D-Form instructions 
+#it means ignore the register)
+addi 7, 0, 55
+#Here is the extended mnemonics for the same instruction
+li 7, 55
+</programlisting>
+</example>
+
+<para>
+In the non-immediate-mode uses of the D-Form, the second register is added to the value to give the final address of the memory to load from or store to.  These instructions have the general form:
+</para>
+<programlisting>
+opcode dst, d(a)
+</programlisting>
+
+<para>
+In this form, the address to load/store is specified as <literal>d(a)</literal> where <literal>d</literal> is the numeric address/offset and <literal>a</literal> is the number of the register to use for the address/offset.  They are added together to give the final effective address for the load/store.  Here are some example D-Form/DS-Form load/store instructions.
+</para>
+
+<example>
+<title>Load/Store Instruction Examples using the D-Form and DS-Form</title>
+<programlisting>
+#load a byte from the address in register 2, store it in register 3, 
+#and zero out the remaining bits
+lbz 3, 0(2)
+
+#store the 64-bit contents (double-word) of register 5 into the 
+#address 32 bits past the address specified by register 23
+std 5, 32(23)
+
+#store the low-order 32 bits (word) of register 5 into the address 
+#32 bits past the address specified by register 23
+stw 5, 32(23)
+
+#store the byte in the low-order 8 bits of register 30 into the 
+#address specified by register 4
+stb 30, 0(4)
+
+#load the 16 bits (half-word) at address 300 into register 4, and 
+#zero-out the remaining bits
+lhz 4, 300(0)
+
+#load the half-word (16 bits) that is 1 byte offset from the address 
+#in register 31 and store the result sign-extended into register 18
+lha 18, 1(31)
+</programlisting>
+</example>
+
+<para>
+If you look carefully, you can see that there is sort of a "base opcode" that is being specified at the beginning of the instruction, with several modifiers following.  <literal>l</literal> or <literal>s</literal> are used for "load" and "store".  <literal>b</literal> gives you a byte, <literal>h</literal> gives you a halfword (16 bits), <literal>w</literal> gives you a word (32 bits), and <literal>d</literal> gives you a doubleword (64 bits).  After this, for loads, the <literal>a</literal> and <literal>z</literal> modifiers tell whether or not the value is sign-extended, or if it is simply zero-padded when loaded into the register.  Finally, a <literal>u</literal> can be attached which tells the processor to update the register used in address calculation with the final computed address of the instruction.
+</para>
+
+</sect1>
+
+<sect1>
+<title>Addressing Memory Using the X-Form Instruction Format</title>
+
+<para>
+The X-Form is used for indexed register indirect addressing, where the values of two registers are added together to determine the address for loading/storing.  The X-Form has the following format:
+</para>
+
+<variablelist>
+<title>The X-Form Instruction Format</title>
+<varlistentry>
+<term>Bits 0-5</term>
+<listitem><para>Opcode</para></listitem>
+</varlistentry>
+<varlistentry>
+<term>Bits 6-10</term>
+<listitem><para>Source/Destination Register</para></listitem>
+</varlistentry>
+<varlistentry>
+<term>Bits 11-15</term>
+<listitem><para>Address Calculation Register A</para></listitem>
+</varlistentry>
+<varlistentry>
+<term>Bits 16-20</term>
+<listitem><para>Address Calculation Register B</para></listitem>
+</varlistentry>
+<varlistentry>
+<term>Bits 21-30</term>
+<listitem><para>Extended Opcode</para></listitem>
+</varlistentry>
+<varlistentry>
+<term>Bit 31</term>
+<listitem><para>Unused</para></listitem>
+</varlistentry>
+</variablelist>
+
+<para>
+The opcodes are formatted like this:
+</para>
+
+<programlisting>
+opcode dst, rega, regb
+</programlisting>
+
+<para>
+Here <literal>opcode</literal> is the opcode for the instruction, <literal>dst</literal> is the destination (or source) register for the data transfer, and <literal>rega</literal> and <literal>regb</literal> are the two registers used for address calculation.
+</para>
+
+<para>
+Here are some example instructions using the X-Form:
+</para>
+
+<example>
+<title>Example X-Form addressing</title>
+<programlisting>
+#Load a doubleword (64 bits) from the address specified by 
+#register 3 + register 20 and store the value into register 31
+ldx 31, 3, 20
+
+#Load a byte from the address specified by register 10 + register 12 
+#and store the value into register 15 and zero-out remaining bits
+lbzx 15, 10, 12
+
+#Load a halfword (16 bits) from the address specified by 
+#register 6 + register 7 and store the value into register 8, 
+#sign-extending the result through the remaining bits
+lhax 8, 6, 7
+
+#Take the doubleword (64 bits) in register 20 and store it in the 
+#address specified by register 10 + register 11
+stdx 20, 10, 11
+
+#Take the doubleword (64 bits) in register 20 and store it in the 
+#address specified by register 10 + register 11, and then update 
+#register 10 with the final address
+stdux 20, 10, 11
+</programlisting>
+</example>
+
+<para>
+The advantage of X-Form, beside being very flexible, is that you have a significantly extended address range.  In the D-Form, only one value -- the register -- could specify a full range.  In the X-Form, since you have two registers, both components can specify as large of a range as necessary.  Therefore, in situations where base-pointer addressing or indexed addressing would be used, but the 16-bit range of the constant part of the D-Form is too small, the value can be stored in a register and the X-Form can be used.
+</para>
+
+</sect1>
+
+<sect1>
+<title>Writing Position-independent Code</title>
+
+<para>
+Position-independent code is code that works no matter what part of memory it is loaded into.  Why do we need position-independent code?  Position-independent code allows libraries to be loaded into arbitrary locations in the address space.  This is what allows libraries to be arbitrarily combined -- since none of them have specific locations they are bound to, they can be loaded with any other library without worrying about address space conflicts.  The linker takes care of making sure libraries are each loaded into their own space.  By using position-independent code, the libraries don't have to worry about where they are loaded.
+</para>
+
+<para>
+Ultimately, however, position-independent code needs to have a method of locating global variables.  It does this by maintaining a <emphasis>global offset table</emphasis> that provides addresses for all global contents that a function or group of functions access (or even a whole program, in most cases).  A register is reserved for holding the pointer to the table.  Then, all accesses are done by an offset into the table.  The offsets are constant.  The table itself is set up by the program linker/loader, which also initializes register 2 to hold the global offset table pointer.  Using this method, the linker/loader can put both program and data wherever it deems appropriate, and only needs to set up a global offset table containing all of the global pointers.  
+</para>
+
+<para>
+It is easy to get bogged down in a discussion of all of this.  Let's look at some code and analyze what is going on at each step of the way.  This is the "add numbers" program used in the previous article, but adapted for position-independent code.
+</para>
+
+<example>
+<title>Accessing Data through the Global Offset Table</title>
+<programlisting>
+###DATA DEFINITIONS###
+.data
+.align 3
+first_value:
+        .quad 1
+second_value:
+        .quad 2
+
+###ENTRY POINT DECLARATION###
+.section .opd, "aw"
+.align 3
+.globl _start
+_start:
+        .quad ._start, .TOC.@tocbase, 0
+
+###CODE###
+.text
+._start:
+        ##Load values##
+        #Load the address of first_value into register 7 from the global offset table
+        ld 7, first_value@got(2)
+        #Use the address to load the value of first_value into register 4
+        ld 4, 0(7)
+        #Load the address of second_value into register 7 from the global offset table
+        ld 7, second_value@got(2)
+        #Use the address to load the value of second_value into register 5
+        ld 5, 0(7)
+
+        ##Perform addition##
+        add 3, 4, 5
+
+        ##Exit with status##
+        li 0, 1
+        sc
+</programlisting>
+</example>
+
+<para>
+The data definition and entry point declaration are both the same as before.  However, now, instead of having to use 5 instructions to load the address of <literal>first_value</literal> into register 7, only one instruction is needed: <literal>ld 7, first_value@got(2)</literal>.  As we mentioned before, the linker/loader sets up register 2 as the address of the global offset table.  The syntax <literal>first_value@got</literal> asks the linker to use, instead of the address of <literal>first_value</literal>, the offset within the global offset table which contains <literal>first_value</literal>'s address.  
+</para>
+
+<para>
+Using this method, most programs can contain all of the global data they use within a single global offset table.  The DS-Form can address up to 64K of memory from a single base.  Note that in order to get the full range of the DS-Form, register 2 points to the <emphasis>middle</emphasis> of the global offset table, so that it can make use of both positive and negative offsets.  Since we are locating pointers to data (instead of data directly), this means that we have access to approximately 8,000 global variables (local variables are in registers or in the stack, which will be discussed in the next article).   And even if this were not enough, there can exist multiple global offset tables.  The mechanism for this is also discussed in the next article.
+</para>
+
+<para>
+While this is much more compact and readable (not to mention relocatable) than the five-instruction data load in the last article, we can still do better.  In the 64-bit ELF ABI, the global offset table is actually a subset of a larger section known as the <emphasis>table of contents</emphasis>.  In addition to creating global offset table entries, the table of contents can contain variables, which, rather than containing <emphasis>addresses</emphasis> of global data, contain the data items themselves.  The size and number of these variables must be small, since the table of contents is only 64K.
+</para>
+
+<para>
+In order to declare a table of contents data item, you have to switch to the <literal>.toc</literal> section and make the declaration explicitly.  It looks like this:
+</para>
+
+<programlisting>
+.section .toc
+name:
+.tc unused_name[TC], initial_value
+</programlisting>
+
+<para>
+This will create a table of contents entry.  <literal>name</literal> is the symbol used to refer to it within the code.  <literal>initial_value</literal> is the 64-bit value that is initially assigned.  <literal>unused_name</literal> is a historical relic, but not presently used for any purpose in ELF systems.  You can leave it out (it is included above just to help with reading legacy code), but the <literal>[TC]</literal> is required.
+</para>
+
+<para>
+To access data that is directly within the table of contents, you need to refer to it using <literal>@toc</literal> rather than <literal>@got</literal>.  <literal>@got</literal> still functions, but it functions as before -- returning a pointer to your value rather than the value itself.  Take a look at this code:
+</para>
+
+<example>
+<title>Difference between @got and @toc</title>
+<programlisting>
+### DATA ###
+
+#Create the variable my_var in the table of contents
+.section .toc
+my_var:
+.tc [TC], 10
+
+### ENTRY POINT DECLARATION ###
+.section .opd, "aw"
+.align 3
+.globl _start
+_start:
+        .quad ._start, .TOC.@tocbase, 0
+
+### CODE ###
+.text
+._start:
+        #loads the number 10 (my_var contents) into register 3
+        ld 3, my_var@toc(2) 
+
+        #loads the address of my_var into register 4
+        ld 4, my_var@got(2)
+        #loads the number 10 (my_var contents) into register 4
+        ld 3, 0(4)
+
+        #load the number 15 into register 5
+        li 5, 15
+
+        #store 15 (register 5) into my_var via ToC
+        std 5, my_var@toc(2)
+
+        #store 15 (register 5) into my_var via GOT (offset already loaded into register 4)
+        std 5, 0(4)
+
+        #Exit with status 0
+        li 0, 1
+        li 3, 0
+        sc
+</programlisting>
+</example>
+
+<para>
+As you can see, if you look up a symbol that defines data within the <literal>.toc</literal> section (as opposed to the <literal>.data</literal> section where most data is), using <literal>@toc</literal> will give you an offset that leads directly to the value itself, while using <literal>@got</literal> will give you an offset to an address for the value.
+</para>
+
+<para>
+Now let's look at the adding numbers example using values from the ToC:
+</para>
+
+<example>
+<title>Adding Numbers Defined in the .toc Section</title>
+<programlisting>
+### PROGRAM DATA ###
+#Create the values in the table of contents
+.section .toc
+first_value:
+        .tc [TC], 1
+second_value:
+        .tc [TC], 2
+
+### ENTRY POINT DEFINITION ###
+.section .opd, "aw"
+.align 3
+.globl _start
+_start:
+        .quad ._start, .TOC.@tocbase, 0
+
+.text
+._start:
+        ##Load values from the table of contents ##
+        ld 4, first_value@toc(2)
+        ld 5, second_value@toc(2)
+
+        ##Perform addition##
+        add 3, 4, 5
+
+        ##Exit with status##
+        li 0, 1
+        sc
+</programlisting>
+</example>
+
+<para>
+As you can see, by using <literal>.toc</literal>-based data, you can significantly lower the number of instructions used by your code.  Also, since the table of contents is usually in cache, it significantly lowers memory latency as well.  Just be careful with how much data is stored.
+</para>
+
+</sect1>
+
+<sect1>
+<title>Loading and Storing Multiple values</title>
+
+<para>
+The PowerPC also has the ability to perform multiple loads and stores with a single instruction.  Unfortunately, this is restricted to word-sized (32 bit) data.  These are very simple D-Form instructions.  You specify the base address register, the offset, and the starting destination register.  The processor will then load data into all the registers starting with the listed destination register through register 31, starting with the address specified with the instruction, and moving forward.  The instructions for this are <literal>lmw</literal> (load multiple world) and <literal>stmw</literal> (store multiple word).  Here are a few examples:
+</para>
+
+<example>
+<title>Loading and Storing Multiple Values</title>
+<programlisting>
+#Starting at the address specified in register ten, load
+#the next 32 bytes into registers 24-31
+lmw 24, 0(10)
+
+#Starting at the address specified in register 8, load 
+#the next 8 bytes into registers 30-31
+lmw 30, 0(8)
+
+#Starting at the address specified in register 5, store
+#the low-order 32-bits of registers 20-31 into the next
+#48 bytes
+stmw 20, 0(5)
+</programlisting>
+</example>
+
+<para>
+And here is our add numbers program again using multiple values:
+</para>
+
+<example>
+<title>The add numbers program using multiple values</title>
+<programlisting>
+### Data ###
+.data
+first_value:
+        #using "long" instead of "double" because
+        #the "multiple" instruction only operates
+        #on 32-bits
+        .long 1  
+second_value:
+        .long 2
+
+### ENTRY POINT DECLARATION ###
+.section .opd, "aw"
+.align 3
+.globl _start
+_start:
+        .quad ._start, .TOC.@tocbase, 0
+
+### CODE ###
+.text
+._start:
+        #Load the address of our data from the GOT
+        ld 7, first_value@got(2)
+
+        #Load the values of the data into registers 30 and 31
+        lmw 30, 0(7)
+
+        #add the values together
+        add 3, 30, 31
+
+        #exit
+        li 0, 1
+        sc
+</programlisting>
+</example>
+
+</sect1>
+
+<sect1>
+<title>With Update Mode</title>
+
+<para>
+Most load/store instructions can update the main address register with the final effective address that was used in the load/store instruction.  For example, <literal>ldu 5, 4(8)</literal> will load from the address specified in register 8 plus four bytes into register 5, and then store the calculated address <emphasis>back into</emphasis> register 8.  This is called loading and storing <emphasis>with update</emphasis>, and can be used to decrease the number of instructions required to do a number of tasks.  We will see it used more in the next article.
+</para>
+
+</sect1>
+
+<sect1>
+<title>Conclusion</title>
+
+<para>
+Efficient loading and storing is critical for efficient code.  Knowing the instruction formats and addressing modes available helps to understand the possibilities and limitations of a platform.  The D-Form and DS-Form instruction formats on the PowerPC are critical for position-independent code.  Position-independent code allows for both the creation of shared libraries, as well as assists in using fewer instructions to load global addresses.
+</para>
+
+<para>
+In the next article, we will get into the details of branching, function calls, and integrating with C code.
+</para>
+
+</sect1>
+
+</chapter>

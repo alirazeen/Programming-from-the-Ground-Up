@@ -1,0 +1,626 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<dw-document xsi:noNamespaceSchemaLocation="http://dw.raleigh.ibm.com/developerworks/library/schema/4.0/dw-document-4.0.xsd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+<dw-article local-site="worldwide" ratings-form="auto" related-contents="auto" toc="auto" skill-level="3">
+<id cma-id="" domino-uid="" content-id="" original="yes"/>
+<keywords content="PowerPC, POWER5, ABI, 64-bit, assembly language, programming, stack, volatile registers, non-volatile registers, dedicated registers, shared library, compile, link, shared object, official procedure descriptor, table of contents" />
+
+<meta-last-updated day="19" month="10" year="2006" initials="jlb"/>
+
+<content-area-primary name="linux" />
+
+<title>Function Calls and the PowerPC 64-bit ABI</title>
+
+<author jobtitle="Director of Technology" company="New Medio" email="johnnyb@eskimo.com"  >
+<bio>Jonathan Bartlett is the author of the book <a href="http://www.cafeshops.com/bartlettpublish.8640017"><i>Programming from the Ground Up</i></a> which is an introduction to programming using Linux assembly language.  He is the lead developer at New Medio, developing web, video, kiosk, and desktop applications for clients.
+</bio>
+<name>Jonathan Bartlett</name>
+</author>
+
+<date-published day="01" month="09" year="2004" /><abstract>
+The <i>ABI</i>, or Application Binary Interface, is the set of conventions that allow programs written in different languages or compiled by different compilers to call each other's functions.  In this article, we will discuss the PowerPC ABI for 64-bit ELF (UNIX-like) systems and how to write and call functions using it.  Knowing the details of how the 64-bit PowerPC ABI works will help you write 64-bit programs for the POWER5 and other PowerPC-based processors more effectively, whether you program in assembly language or not.  There is also a 32-bit ABI which is not covered in this article.
+</abstract><docbody>
+
+<heading refname="" type="major" toc="yes" alttoc="">The Simplified ABI</heading>
+
+<p>
+In the previous article, we discussed the "simplified" ABI shortly.  This allows the writing of functions which meet certain criteria with a minimum of fuss.  These are criteria that a function must meet to use the simplified ABI:
+</p>
+
+<ul>
+<li>It must not call any other function.</li>
+<li>It may only modify registers 3 through 12 (see
+exceptions at the end of the article).</li>
+<li>It may only modify register fields <code type="inline">cr0</code>, <code type="inline">cr1</code>, <code type="inline">cr5</code>, <code type="inline">cr6</code>, and <code type="inline">cr7</code>.</li>
+</ul>
+
+<p>
+There are a few additional restrictions if your code uses the PowerPC
+vector processing extensions as well, but that is beyond the scope of this article.  
+</p>
+
+<p>
+Interestingly, you need not declare in any way when you are using the
+simplified ABI, because it is a fully-compatible subset of the normal
+ABI for functions which do not need <i>stack frames</i>,
+which we will discuss in the next section.  
+</p>
+
+<p>
+When a function is called using the PowerPC ABI semantics, it passes the parameters to the function in registers.  Register 3 has the first fixed-point parameter, register 4 has the second, and so on through register 10.  Likewise, floating-point values are passed through the floating-point registers 1 through 13.  When the function is completed, the value is returned through register 3, and the function exits using the <code type="inline">blr</code> instruction.
+</p>
+
+<p>
+In order to demonstrate the simplified PowerPC ABI, we will write a function that takes one parameter, squares it, and returns it.  Here is the function in assembly language (enter as <code type="inline">my_square.s</code>):
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 1. Function to Square a Number Using the Simplified ABI</heading>
+###FUNCTION ENTRY POINT DECLARATION###
+.section .opd, "aw"
+.align 3
+
+.global my_square
+my_square:   #this is the name of the function as seen 
+	.quad .my_square, .TOC.@tocbase, 0
+#Tell the linker that this is a function reference
+.type my_square, @function
+
+###FUNCTION CODE HERE###
+.text 
+.my_square:  #This is the label for the code itself (referenced in the "opd")
+	#Parameter 1 -- number to be squared -- in register 3
+
+	#Multiply it by itself, and store it back into register 3
+	mulld 3, 3, 3
+
+	#The return value is now in register 3, so we just need to leave
+	blr
+</code>
+
+
+<p>
+Notice that previously we were using the <code type="inline">.opd</code>
+section for declaring the program's entry point, but here we are also
+using it to declare a function.  These are called <i>official
+procedure descriptors</i> and they contain the information the
+linker needs to combine position-independent code from different
+shared object files together.  The most important field is the first
+one, which is the address of the start of the code for the procedure.
+The second field is the TOC pointer used for the function.  The third field is an environment pointer for languages that use one, but is normally just set to zero.  Notice that the only symbol definition that is exported globally is the official procedure descriptor.   
+</p>
+
+<p>
+The C language prototype for this function is:
+</p>
+
+<code type="section">
+typedef long long int64;
+int64 my_square(int64 val);
+</code>
+
+<p>
+Here is the C code for using the function (enter as <code type="inline">my_square_tester.c)</code>:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 2. C Code for Calling the my_square Function</heading>
+#include &lt;stdio.h&gt;
+
+/* make declarations easier to write */
+typedef long long int64; 
+
+int64 my_square(int64);
+
+int main() {
+    int a = 32;
+    printf("The square of %lld is %lld.\n", a, my_square(a));
+    return 0;
+}
+</code>
+
+
+<p>
+The simple way to compile and run this code is to do the following:
+</p>
+
+<code type="section">
+gcc -m64 my_square.s my_square_tester.c -o my_square_tester
+./my_square_tester
+</code>
+
+<p>
+The <code type="inline">-m64</code> flag tells the compiler to use 64-bit
+instructions, compile using the 64-bit ABI and libraries, and use the
+64-bit ABI for linking.  It then takes care of all of the linking
+issues for you (and there are several -- you can see the full linking command-line by appending <code type="inline">-v</code> to the command-line).  
+</p>
+
+<p>
+As you can see, writing functions using the simplified PowerPC ABI is
+very straightforward.  The issues come in when the functions don't
+meet these criteria.
+</p>
+
+
+<heading refname="" type="major" toc="yes" alttoc="">The Stack</heading>
+
+<p>
+Now we will get into the more complicated parts of the ABI.  The most
+important part of any ABI is the details of how to make use of the
+<i>stack</i>, which is the area of memory which holds 
+local function data.
+</p>
+
+<heading refname="" type="minor" toc="no" alttoc="">The Need for a Stack</heading>
+
+<p>
+The best way to see why stacks are needed is to look at recursive functions.  For simplicity, let's look at the recursive implementation of the factorial function:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 3. Factorial Function</heading>
+typedef long long int64;
+int64 factorial(int64 num) {
+      //BASE CASE    
+      if (num == 0) {
+      	 return 1;
+      //RECURSIVE CASE
+      } else {
+         return num * factorial(num - 1);
+      }
+}
+</code>
+
+
+<p>
+This may be easy enough to understand conceptually, but let's examine it concretely.  What is going on here?  What happens, for instance, if we try to find the value of the factorial of 4?  Let's follow the sequence:
+</p>
+
+<p>
+First, the function will be called, and <code type="inline">num</code> will be set equal to 4.  Then, because <code type="inline">num</code> is greater than 0, <code type="inline">factorial</code> will be called again, this time with 3.  Now, in the new call to <code type="inline">factorial</code>, <code type="inline">num</code> is set to 3.  However, this references a <i>different memory location than the previous one, even though they share the same name and the same code</i>.  Even though it is the same variable name in the same code, <code type="inline">num</code> is different this time.  This is because each time a function is called, it has an <i>activation record</i> (also called a <i>stack frame</i>) associated with it.  The activation record contains all of the call-specific data for the function, including parameters and local variables.  This is how recursive functions keep from trashing the values of the variables in other, active function calls.  Each call gets its own activation record, so each time it is called the variables get their own storage space within that activation record.  <i>Only when the function call is completely finished</i> is the space for the activation record released for reuse.  We will talk about how the activation record is stored shortly.
+</p>
+
+<p>
+So, with 3 as the value of <code type="inline">num</code>, we go through the
+function again, then with 2, then with 1, then with 0.  However, with
+0 the function has reached its <i>base case</i>.  The
+base case is the point where it ceases to call itself, and instead
+returns.  So, with 0 as <code type="inline">num</code>, it returns 1 as the
+result.  The previous function call picks up where it left off
+(callling <code type="inline">factorial(0)</code>) and multiplies the result,
+1, with the value in it's own <code type="inline">num</code>, also 1.  This is
+returned, and the next function waiting is reactivated.  This
+one multiplies the result, 1,  with its value of <code type="inline">num</code>, which
+is 2, and the result, 2, is then returned.  The next waiting function call 
+is then reactivated, and the previousresult is multiplied by this function's value of <code type="inline">num</code>, which is 3, resulting in 6.  This number is returned to our original function, whose value of <code type="inline">num</code> is 4.  This is multiplied with the previous result to get 24.
+</p>
+
+<p>
+As you can see, each time a function calls another function, its own
+values and state are suspended while the next function invocation
+occurs.  This is true for all functions, not just recursive ones.  If
+that function again calls other functions, its state is likewise
+suspended.  When a function returns, the function that called it is
+revived and it continues from there.  So, as we progress, the "live"
+function calls stack up on top of each other with each function call, and
+then are removed from the stack with every function return.  The
+result looks like this (<code type="inline">factorial</code> will be abbreviated as <code type="inline">fac</code>):
+</p>
+
+<ol>
+<li><code type="inline">fac(4)</code> [active]</li>
+<li><code type="inline">fac(4)</code> [suspended], <code type="inline">fac(3)</code> [active]</li>
+<li><code type="inline">fac(4)</code> [suspended], <code type="inline">fac(3)</code> [suspended], <code type="inline">fac(2)</code> [active]</li>
+<li><code type="inline">fac(4)</code> [suspended], <code type="inline">fac(3)</code> [suspended], <code type="inline">fac(2)</code> [suspended], <code type="inline">fac(1)</code> [active]</li>
+<li><code type="inline">fac(4)</code> [suspended], <code type="inline">fac(3)</code> [suspended], <code type="inline">fac(2)</code> [suspended], <code type="inline">fac(1)</code> [suspended], <code type="inline">fac(0)</code> [active]</li>
+<li><code type="inline">fac(4)</code> [suspended], <code type="inline">fac(3)</code> [suspended], <code type="inline">fac(2)</code> [suspended], <code type="inline">fac(1)</code> [active]</li>
+<li><code type="inline">fac(4)</code> [suspended], <code type="inline">fac(3)</code> [suspended], <code type="inline">fac(2)</code> [active]</li>
+<li><code type="inline">fac(4)</code> [suspended], <code type="inline">fac(3)</code> [active]</li>
+<li><code type="inline">fac(4)</code> [active]</li>
+</ol>
+
+<p>
+As you can see, the suspended function activation records "stack up",
+and then, when each function returns, it gets taken off of the stack.  
+</p>
+
+
+
+<heading refname="" type="minor" toc="no" alttoc="">The Stack Layout</heading>
+
+<p>
+To implement this idea, a range of memory is allocated for each program
+called the <i>program stack</i>.  All PowerPC programs start off
+with a pointer to this stack in register 1.  In the PowerPC ABI,
+register 1 <i>always points to the top of the stack</i>.
+This makes it easy for functions to know where their activation record
+is - they are simply defined in terms of the stack pointer.  If a
+function is executing, then the stack pointer is pointing to the top
+of the whole stack, which is also the top of that function's activation record.  Because activation records are implemented on a stack, they are often referred to as <i>stack frames</i>, but both terms are equivalent.
+</p>
+
+<p>
+Now, when the "top of the stack" is referred to, that is a conceptual
+designation.  Physically, in memory, the stack grows downward, from
+large-numbered memory addresses to small-numbered ones.  Therefore, register
+1 will have a pointer to the conceptual top of the stack, and
+references to stack positions which have positive offsets will
+actuallly be <i>below</i> the top of the stack
+conceptually, and negative offsets will be conceptually above.  So,
+<code type="inline">0(1)</code> refers to the conceptual top of the stack, <code type="inline">4(1)</code> refers to four bytes down from the top (conceptually), <code type="inline">24(1)</code> is even lower conceptually, and <code type="inline">100(1)</code> is lower still.
+</p>
+
+<p>
+Now that we understand how the stack looks conceptually and physically, let's look at what exactly the individual stack frames hold. Here is the layout of the stack according to the 64-bit PowerPC ABI, from a physical memory standpoint (stack offsets, where given, refer to the <i>beginnning</i> of this location in memory):
+</p>
+
+<heading refname="" type="minor" toc="no">Stack Frame Layout</heading>
+<table>
+<tr><th>Contains</th><th>Size</th><th>Beginning Stack Offset</th></tr>
+<tr><td>Floating point non-volatile register save area</td><td>Varies</td><td>Varies</td></tr>
+<tr><td>General non-volatile register save area</td><td>Varies</td><td>Varies</td></tr>
+<tr><td>VRSAVE</td><td>4 bytes</td><td>Varies</td></tr>
+<tr><td>Alignment padding</td><td>4 or 12 bytes</td><td>Varies</td></tr>
+<tr><td>Vector non-volatile register save area</td><td>Varies</td><td>Varies (must be quadword-aligned)</td></tr>
+<tr><td>Local variable storage</td><td>Varies</td><td>Varies</td></tr>
+<tr><td>Parameters for function calls</td><td>Varies (minimum 64 bytes)</td><td><code type="inline">48(1)</code></td></tr>
+<tr><td>TOC save area</td><td>8</td><td><code type="inline">40(1)</code></td></tr>
+<tr><td>Link editor area</td><td>8</td><td><code type="inline">32(1)</code></td></tr>
+<tr><td>Compiler area</td><td>8</td><td><code type="inline">24(1)</code></td></tr>
+<tr><td>Link Register save area</td><td>8</td><td><code type="inline">16(1)</code></td></tr>
+<tr><td>Condition Register save area</td><td>8</td><td><code type="inline">8(1)</code></td></tr>
+<tr><td>Pointer to top of previous stack frame</td><td>8</td><td><code type="inline">0(1)</code></td></tr>
+</table>
+
+<p>
+We will not be concerned with the floating point, VRSAVE, Vector, or
+alignment space.  Those topics are outside the scope of this article,
+and deal with floating point and vector processing.  All stack values must be doubleword (8-byte) aligned, and the whole
+frame should be quadword (16-byte) aligned.  All parameters must be
+doubleword-aligned.  
+</p>
+
+<p>
+Now let's look at what each part of the stack frame does.
+</p>
+
+<heading refname="" type="minor" toc="no" alttoc="">Non-Volatile Register Save Areas</heading>
+
+<p>
+The first part of the stack
+frame is the <i>non-volatile
+register save area</i>.  
+Registers in the PowerPC ABI are divided into
+three basic classes - dedicated, volatile, and non-volatile.
+<i>Dedicated registers</i> are registers which have a predefined, permanent
+function, like the stack pointer (register 1) and the TOC pointer
+(register 2).  Registers 3-12 are <i>volatile registers</i>, which means that
+any function can modify them freely without having to restore their previous value.  However, this means that any
+time a function calls another function, it should assume that
+registers 3-12 will be overwritten by that function.  On the other hand,
+registers 13 and above are considered <i>non-volatile registers</i>.  This
+means that a function can use them <i>provided their value is
+restored before returning from the function</i>.  Therefore,
+before using a non-volatile register in a function, its value must be
+saved in the function's stack frame, and then restored before the
+function returns.  Likewise, a function may also assume that the values it 
+assigns to non-volatile registers will not be modified (or at least will 
+be restored) when it makes calls to other functions.  A function may use as little or as much memory in this save area as needed.
+</p>
+
+<p>
+Now you can see why our earlier rules for the simplified ABI required that only registers 3 through 12 should be used - the others are non-volatile and require stack space to save them!  Therefore, in order to use the other registers, they have to be saved on the stack.  However, the ABI actually has a way to work around this
+limitation.  Functions are free to use the 288 bytes which are physically below the stack pointer for functions which do not call other functions.  Therefore, functions using the simplified ABI actually can save, use, and restore non-volatile registers by using negative offsets from the stack pointer.  
+</p>
+
+<heading refname="" type="minor" toc="no" alttoc="">Local Variable Storage</heading>
+<p>
+The local variable storage area is a general-purpose area for saving function-specific data.  Often times this is not needed because of the large
+number of registers available for use in the PowerPC architecture.  However, this space is often used for local arrays.  This area can be any size
+needed by the function.
+</p>
+
+<heading refname="" type="minor" toc="no" alttoc="">Parameters For Function Calls</heading>
+
+<p>
+Function parameters are handled a little differently than other local
+data.  The PowerPC ABI actually puts the storage space for the
+function parameters in the <i>calling
+function's stack space</i>.  Now, as we saw earlier, function
+calls actually pass their parameters through registers.  However,
+space must still be reserved for parameters in case the values need to
+be saved, especially since the parameters are passed using volatile registers.  This space is also used for
+overflow - if there are more parameters than registers available for
+use, then they need to go in the stack space.  Since this parameter
+area is shared by all functions called from the current one, when a function sets up its stack space, it has to reserve space for the largest number of parameters it will use in a function call.
+</p>
+
+
+<p>
+In order that a function can know where its parameters are, parameters are stored from the bottom of memory to the top.  So the first parameter is in <code type="inline">48(1)</code>, while the second parameter is in <code type="inline">56(1)</code>.  This way, the function being called can know the exact offset of each parameter, no matter how big the parameter list area is.  Remember, the parameter list area is defined for <i>all</i> of the calls made by a function, and therefore will likely be bigger than necessary for any individual function call.  
+</p>
+
+<p>
+Now, since the save area for the parameters passed to a function are actually in the calling function's stack frame, when a function establishes its own stack frame, the offsets to the parameter list now have to be adjusted to account for the function's own stack frame size.  So, let's say that function <code type="inline">func1</code> calls function <code type="inline">func2</code> with three parameters, and <code type="inline">func2</code> has a 112-byte stack frame.  If <code type="inline">func2</code> wants to access the memory for its first parameter, it would refer to it as <code type="inline">160(1)</code>, because it has to go past its own stack frame (112 bytes) and reach the first parameter in the last frame (48 bytes).  Thankfully, functions rarely have to access their parameter save area because most parameters are passed by register, not in the parameter save area.  However, space must be allocated for them <i>even if there is nothing stored there</i>.  Functions must assume that for the first eight parameters, they are <i>only</i> passed by register, but they will still have a save area available if they need to be stored by the program.  This space must also be a minimum of 64 bytes large.
+</p>
+
+<heading refname="" type="minor" toc="no" alttoc="">TOC, Link Editor, and Compiler Areas</heading>
+
+<p>
+The TOC save
+area, compiler area, and linker area, are all reserved for system use, and are
+not modified by programmers, but the programmer must reserve space for them.
+</p>
+
+<heading refname="" type="minor" toc="no" alttoc="">Link Register Save Area</heading>
+
+<p>
+The link register save area is different from the other parts of the ABI.  When a function begins, it actually saves the link register in the
+calling function's stack frame, not its own, and then only if it needs to save it.  Most functions that call other functions will need it, though.
+</p>
+
+<heading refname="" type="minor" toc="no" alttoc="">Condition Register Save Area</heading>
+<p>
+The condition register save area is needed if any of the non-volatile fields of the condition register is modified.  The non-volatile fields are <code type="inline">cr2</code>, <code type="inline">cr3</code>, and <code type="inline">cr4</code>.  The condition register should be saved in its area of the stack before any of these fields are modified, and then restored before returning.  
+</p>
+<heading refname="" type="minor" toc="no" alttoc="">Pointer to the Previous Stack Frame</heading>
+<p>
+The final item in the stack frame is a pointer to the previous stack frame, often called the <i>back pointer</i>.
+</p>
+
+
+<heading refname="" type="minor" toc="no" alttoc="">Writing a Function that Uses the Stack</heading>
+
+<p>
+Functions create the stack frame during the beginning of the function (called the <i>function prologue</i>) and tear it down at the end of a function (called the <i>function epilogue</i>).  
+</p>
+
+<p>
+A function's prologue usually follows the following sequence:
+</p>
+
+<ol>
+<li>Reserve stack space and save the old stack pointer, using <code type="inline">stdu 1, -SIZE_OF_STACK(1)</code> (where <code type="inline">SIZE_OF_STACK</code> is the size of the stack frame for this function).  This will save the old stack pointer and allocate stack memory atomically.</li>
+<li>If this function will call another function, or use the link register in any way, it will be saved by the instruction <code type="inline">mflr 0</code> followed by a store into the link register save area of the function that called this one, using the instruction <code type="inline">std 0, SIZE_OF_STACK+16(1)</code>.</li>
+<li>Save all non-volatile registers which will be used during this function (including the condition register, if any of its non-volatile fields will be used).</li>
+</ol>
+
+<p>
+The function's epilogue follows the reverse sequence, restoring what had been saved, and then destroying the stack frame using <code type="inline">ld 1, 0(1)</code>, which loads the previous stack pointer back into the the stack pointer register.
+</p>
+
+<p>
+Now let's return to the function that we originally implemented without a stack, and as an example, look and see what it would look like with a stack (enter as <code type="inline">my_square.s</code>, and compile and run as before):
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 4. Function to Square a Number Using a Stack</heading>
+###FUNCTION ENTRY POINT DECLARATION###
+.section .opd, "aw"
+.align 3
+
+.global my_square
+my_square:   #this is the name of the function as seen
+        .quad .my_square, .TOC.@tocbase, 0
+.type my_square, @function
+
+###FUNCTION CODE HERE###
+.text
+.my_square:  #This is the label for the code itself (Referenced in the "opd")
+        ##PROLOGUE##
+        #Set up stack frame &amp; back pointer (112 bytes -- minimum stack)
+        stdu 1, -112(1)
+        #Save LR (optional)
+        mflr 0
+        std 0, 128(1)
+        #Save non-volatile registers (we don't have any)
+
+        ##FUNCTION BODY##
+	#Parameter 1 -- number to be squared -- in register 3
+        mulld 3, 3, 3
+
+	#The return value is now in register 3, so we just need to leave
+
+        ##EPILOGUE##
+        #Restore non-volatile registers (we don't have any)
+        #Restore LR (not needed in this function, but here anyway)
+        ld 0, 128(1)
+        mtlr 0
+        #Restore stack frame atomically
+        ld 1, 0(1)
+        #Return
+   	blr
+</code>
+
+
+<p>
+That's the exact same code as before, just wrapped with prologue and epilogue code.  As mentioned, this code is simple enough that it doesn't need prologue and epilogue code, and is perfectly fine using the simplified ABI.  However, it gives a simple example of how to set up and tear down a stack frame.
+</p>
+
+<p>
+Now let's return to the factorial function.   This function, since it calls itself, makes very good use of stack frames.  Let's look at how the factorial function would work in assembly language (enter as <code type="inline">factorial.s</code>):
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 5. The Factorial Function in Assembly Language</heading>
+###ENTRY POINT###
+.section .opd, "aw"
+.align 3
+
+.global factorial
+factorial:
+         .quad .factorial, .TOC.@tocbase, 0
+.type factorial, @function
+
+###CODE###
+.text
+.factorial:
+        #Prologue
+	#Reserve Space
+	#48 (save areas) + 64 (parameter area) + 8 (local variable) = 120 bytes.
+	#aligned to 16-byte boundary = 128 bytes
+	stdu 1, -128(1) 
+	#Save Link Register
+	mflr 0
+        std 0, 144(1)
+
+	#Function body
+
+	#Base Case? (register 3 == 0)
+	cmpdi 3, 0
+	bt- eq, return_one
+
+	#Not base case - recursive call
+	#Save local variable
+	std 3, 112(1)
+	#NOTE - it could also have been stored in the parameter save area.
+	#       parameter 1 would have been at 176(1) 
+
+	#Subtract One
+	subi 3, 3, 1
+
+	#Call the function (branch and set the link register to the return address)
+	bl factorial
+	#Linker word
+	nop 
+
+	#Restore local variable (but to a different register - 
+	#register 3 is now the return value from the last factorial 
+	#function)
+	ld 4, 112(1)
+	#Multiply by return value
+	mulld 3, 3, 4
+	#Result is in register 3, which is the return value register
+
+factorial_return:
+	#Epilogue
+        #Restore Link Register
+        ld 0, 144(1)
+        mtlr 0
+        #Restore stack
+        ld 1, 0(1)
+        #Return
+   	blr
+
+return_one:
+	#Set return value to 1
+        li 3, 1
+	#Return
+        b factorial_return   
+</code>
+
+
+<p>
+To test it from C, enter the following (enter as <code type="inline">factorial_caller.c</code>):
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 6. Program to Call Factorial Function</heading>
+#include &lt;stdio.h&gt;
+typedef long long int64;
+int64 factorial(int64);
+
+int main() {
+    int64 a = 10;
+    printf("The factorial of %lld is %lld\n", factorial(a));
+    return 0;
+}
+</code>
+
+
+<p>
+Compile and run as follows:
+</p>
+
+<code type="section">
+gcc -m64 factorial.s factorial_caller.c -o factorial
+./factorial
+</code>
+
+<p>
+There are a few features of this factorial function that are interesting.  First of all, we are making use of the local variable storage space.  We are saving the current parameter in <code type="inline">112(1)</code>.  Now, since this is a function parameter, we could have saved an extra doubleword of stack space and stored it in the caller's parameter area.   
+</p>
+
+<p>
+Another interesting thing in the program is the the <code type="inline">nop</code> instruction after the function call.  That is <i>required by the ABI</i>.  That extra instruction allows the linker to insert additional code if necessary during the linking process.  For example, if you have a program that has enough symbols to warrant multiple TOCs (TOCs were discussed in a previous article), the linker will emit an instruction (or multiple instructions using a branch) to swap around TOCs for you.
+</p>
+
+<p>
+Finally, notice that <i>the branch target for the function call is not the code that starts it, but the <code type="inline">.opd</code> entry point descriptor</i>.  The linker will take care of converting this to point to the correct code.  However, this will let the linker know additional information about the function, including which TOC it is using, so it can emit the code to swap these around if necessary.
+</p>
+
+
+
+
+
+<heading refname="" type="major" toc="yes" alttoc="">Creating Dynamic Libraries</heading>
+
+<p>
+Now that we know how to make functions, we can put them together into a library.  We actually don't need to write any additional code, we just need to compile it all together.  To combine the <code type="inline">factorial</code> and <code type="inline">my_square</code> functions into a single library (let's call it <code type="inline">libmymath.so</code>, just enter the following:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 7. Compiling Shared Libraries</heading>
+gcc -m64 -shared factorial.s my_square.s -o libmymath.so
+</code>
+
+
+<p>
+This instructs the compiler to produce a shared object called <code type="inline">libmymath.so</code>.  To link this into executables, we need to enable both the compile-time linker and the run-time dynamic linker to find it.  To compile the factorial calling function to use the shared object, compile and run like this:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 8. Using the Shared Library</heading>
+#-L tells what directories to search, -l tells what libraries to find
+gcc -m64 factorial_caller.c -o factorial -L. -lmymath
+#Tell the dynamic linker what additional directories to search
+export LD_LIBRARY_PATH=.
+#Run the program
+./factorial
+</code>
+
+
+<p>
+Of course, you can get rid of all of those directory flags if the library is installed in a standard library location.
+</p>
+
+<p>
+As mentioned in an earlier article, the TOC, or table of contents, of an application only has 64K worth of space for holding global data references.  So what happens when several shared objects are loaded into the same application space and the table of contents gets too big?  The answer is that this is what the <code type="inline">.TOC.@tocbase</code> reference is for in the official procedure descriptor.  The linker can manage several TOCs in a single application.  The <code type="inline">.TOC.@tocbase</code> instructs the linker to put the address of the TOC for that function in that spot.  Then, when the linker is setting up references to functions, it compares the TOC of the current function to the TOC of the function it's calling.  If they are the same, it leaves the call alone.  If they are different, it actually modifies your code to swap TOC references on function call and return.  This is one of the main reasons for the official procedure descriptors, and also one of the main reasons for the extra <code type="inline">nop</code> instruction that follows a function call.
+Because of this, you never have to worry about running out of global symbol space from linking in too many shared objects.
+</p>
+
+
+
+<heading refname="" type="major" toc="yes" alttoc="">Conclusion</heading>
+
+<p>
+The simplified 64-bit ABI is a breeze to use in programs, and the full ABI is not much more difficult.   The most difficult part is determining the different offsets of the different parts of the stack frame, knowing where each piece should go, and what size it should be.
+Creating reusable libraries in assembly language is fast and easy.  To convert functions which use the 64-bit ABI into shared libraries, all is needed is a few extra compiler flags, and you're ready to go.
+Hopefully, this series of articles has demonstrated the ease and power of the PowerPC programming.  Perhaps in your next project, you'll consider tapping the full resources of the POWER5 chip by using its assembly language!
+</p>
+
+</docbody>
+<related-list>
+</related-list>
+
+<resource-list>
+<ul>
+<li>All instructions are documented in the <a href="http://www-128.ibm.com/developerworks/eserver/library/es-archguide-v2.html">PowerPC Architecture Book part 1</a>.</li>
+<li>The <a href="http://www.freestandards.org/spec/ELF/ppc64/PPC-elf64abi-1.9.html">64-bit PowerPC ELF Standard</a> contains the official ABI specifications for function call interfaces.</li>
+<li>64-bit PowerPC chips also support 32-bit instructions.  Most 64-bit PowerpC operating systems also have a 32-bit ABI.  On UNIX-based systems, this is specified in the <a href="http://refspecs.freestandards.org/elf/elfspec_ppc.pdf">32-bit PowerPC ELF Standard</a>.</li>
+<li>There is also an <a href="http://www-3.ibm.com/chips/techlib/techlib.nsf/techdocs/852569B20050FF77852569970071B0D6/$file/eabi_app.pdf">embedded ABI for PowerPC processors</a>.</li>
+<li>All of these are based on the <a
+href="http://www.caldera.com/developers/gabi/2003-12-17/contents.html">System
+V ABI</a>.</li>
+<li>A lot of programming tips and tricks are also found in the <a
+href="http://www-3.ibm.com/chips/techlib/techlib.nsf/techdocs/852569B20050FF7785256996007558C6">PowerPC Compiler Writer's Guide</a>.</li>
+<li>Mac OS X has <a
+href="http://developer.apple.com/documentation/DeveloperTools/Conceptual/LowLevelABI/Articles/64bitPowerPC.html">it's own 64-bit</a> and <a href="http://developer.apple.com/documentation/DeveloperTools/Conceptual/LowLevelABI/Articles/32bitPowerPC.html#//apple_ref/doc/uid/TP40002438">it's own 32-bit</a> function calling conventions as well.</li>
+</ul>
+</resource-list>
+
+</dw-article>
+</dw-document>
+
+

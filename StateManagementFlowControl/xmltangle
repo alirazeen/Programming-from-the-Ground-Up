@@ -1,0 +1,225 @@
+#!/usr/bin/python
+
+#Import needed libraries
+import xml.sax
+import sys, urllib, string, sre, types
+from xml.sax.handler import *
+
+
+class LiterateDocumentHandler(xml.sax.ContentHandler):
+	
+
+	def __init__(self):
+		
+		self.PIRegex = sre.compile('([a-z-]+)="([^"]*)"')
+
+		self.sections = {}
+
+		self.files = {}
+
+		self.matchNonLetterRegex = sre.compile('[^a-zA-Z]+')
+
+		self.characters_cb = self.default_ch_cb
+
+		self.indentRegex = sre.compile('\\n')
+
+		self.options = {
+			'preserve-newlines': 'yes',
+			'strict-options': 'yes'
+		}
+		self.errors = []
+
+
+	
+
+	
+	def processingInstruction(self, target, data):
+	
+				
+				regex_start = 0
+				
+				pi_attrs = {}
+				
+				
+				while 1:
+					try:
+						match = self.PIRegex.search(data, regex_start)
+						pi_attrs[match.group(1)] = match.group(2)
+						regex_start = regex_start + match.end() + 1
+					except:
+						break
+				
+		
+				
+				if target == 'lp-section-id': 
+					self.start_section_id(pi_attrs, data)
+				elif target == 'lp-section-id-end': 
+					self.end_section_id(pi_attrs, data)
+				elif target == 'lp-code': 
+					self.start_code(pi_attrs, data)
+				elif target == 'lp-code-end': 
+					self.end_code(pi_attrs, data)
+				elif target == 'lp-ref': 
+					self.start_ref(pi_attrs, data)
+				elif target == 'lp-ref-end': 
+					self.end_ref(pi_attrs, data)
+				elif target == 'lp-file':
+					self.match_filename_to_section(pi_attrs, data)
+				elif target == 'lp-options':
+					self.set_options(pi_attrs, data)
+				elif target == 'lp-block':
+					self.begin_block(pi_attrs, data)
+				elif target == 'lp-block-end':
+					self.end_block(pi_attrs, data)
+				
+		
+	
+
+	def normalize_id(self, id):
+		id = self.matchNonLetterRegex.sub('', id)
+		#sre.gsub('[^a-zA-Z]+', '', id)
+		id = string.lower(id)
+		return id
+
+	def characters(self, ch):
+		func = self.characters_cb
+		func(ch)
+
+	def ignorableWhitespace(self, ch, start, length):
+		self.characters(ch, start, length)
+
+	def default_ch_cb(self, ch):
+		pass
+
+	
+	def start_section_id(self, attrs, data):
+		self.current_section_id = ''
+		def read_section_id(ch, self=self):
+			self.current_section_id = self.current_section_id + ch
+		self.characters_cb = read_section_id
+
+	def end_section_id(self, attrs, data):
+		self.characters_cb = self.default_ch_cb
+		self.current_section_id = self.normalize_id(self.current_section_id)
+
+	def start_code(self, attrs, data):
+		id = self.current_section_id
+		if self.sections.has_key(id):
+			self.current_section = self.sections[id]
+		else:
+			self.current_section = []
+			self.sections[id] = self.current_section
+			
+		self.characters_cb = lambda ch, data=self.current_section: data.append(ch)
+
+	def end_code(self, attrs, data):
+		if self.options['preserve-newlines'] == "no":
+			try:
+				if self.current_section[0][0] == "\n":
+					self.current_section[0] = self.current_section[0][1:]
+			except:
+				pass
+		self.characters_cb = self.default_ch_cb
+		
+
+	def start_ref(self, attrs, data):
+		self.current_reference = ''
+		self.old_characters_cb = self.characters_cb
+		self.characters_cb = self.read_ref_ch_cb
+
+	def read_ref_ch_cb(self, ch):
+		self.current_reference = self.current_reference + ch
+
+	def end_ref(self, attrs, data):
+		ref = self.current_reference
+		ref = self.normalize_id(ref)
+		self.characters_cb = self.old_characters_cb
+		if not self.sections.has_key(ref):
+			self.sections[ref] = []
+		self.current_section.append(self.sections[ref])
+
+	def begin_block(self, attrs, data):
+		self.current_section.append({'block': 'start'})
+
+	def end_block(self, attrs, data):
+		self.current_section.append({'block': 'end'})
+
+	def match_filename_to_section(self, attrs, data):
+		real_id = self.normalize_id(attrs['id'])
+		if attrs.has_key('id') and attrs.has_key('file'):
+			self.files[attrs['file']] = attrs['id']
+			print(attrs['file'])
+
+	def write_files(self):
+		for file in self.files.keys():
+			ostream = open(file, "w")
+			ostream.write(self.flatten_array_to_string(self.sections[self.files[file]]))
+
+	def flatten_array_to_string(self, array, level=0):
+		new_str = ''
+		for item in array:
+			if type(item) == type([]):
+				tmp_str = self.flatten_array_to_string(item, level)
+			elif type(item) == type({}):
+				if item.has_key('block'):
+					if item['block'] == 'start':
+						level = level + 1
+					else:
+						level = level - 1
+				tmp_str = ''
+			else:
+				tmp_str = item
+
+			if level > 0:
+				indentation = '\n'
+				for i in range(0, level):
+					indentation = indentation + '\t'
+				tmp_str = self.indentRegex.sub(indentation, tmp_str)
+			new_str = new_str + tmp_str 
+
+		return new_str
+
+	def set_options(self, attrs, data):
+		for item in attrs.keys():
+			if self.options['strict-options'] == 'yes':
+				if not self.options.has_key(item):
+					self.errors.append('Option "' + item + '" is not a valid option')
+			self.options[item] = attrs[item]
+
+
+
+class LiterateErrorHandler:
+	def error(self, exception):
+		pass
+
+	def warning(self, exception):
+		pass
+
+	def fatalError(self, exception):
+		pass
+
+
+#Create a SAX XML parser
+parser = xml.sax.make_parser()
+
+
+try:
+	parser.setFeature(feature_external_ges, 1)
+	parser.setFeature(feature_external_pes, 1)
+except:
+	pass
+
+#Instantiate our handler and error classes
+ldh = LiterateDocumentHandler()
+leh = LiterateErrorHandler()
+
+#prepare parser
+parser.setContentHandler(ldh)
+parser.setErrorHandler(leh)
+
+#parse the first argument
+parser.parse(sys.argv[1])
+
+#write out the files indicated
+ldh.write_files()
+

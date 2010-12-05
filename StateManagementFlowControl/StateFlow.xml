@@ -1,0 +1,70 @@
+<?xml version="1.0"?>
+
+<!--
+
+Copyright 2002 Jonathan Bartlett
+
+Permission is granted to copy, distribute and/or modify this
+document under the terms of the GNU Free Documentation License,
+Version 1.1 or any later version published by the Free Software
+Foundation; with no Invariant Sections, with no Front-Cover Texts,
+and with no Back-Cover Texts.  A copy of the license is included in fdl.xml
+
+-->
+
+<!DOCTYPE book PUBLIC "-//OASIS//DTD DocBook XML V4.1.2//EN" "/usr/share/sgml/docbook/xml-dtd-4.1.2-1.0-10/docbookx.dtd" [
+
+<!ENTITY index SYSTEM "index.xml">
+
+<!ENTITY introduction-chapter SYSTEM "IntroductionCh.xml">
+<!ENTITY state-management-introduction-chapter SYSTEM "StateManageIntroCh.xml">
+<!ENTITY memory-management-chapter SYSTEM "MemoryManageCh.xml">
+<!ENTITY values-chapter SYSTEM "ValuesCh.xml">
+
+<!ENTITY fdl-appendix SYSTEM "FDLAp.xml">
+
+<!ENTITY percent "P">
+<!ENTITY eax "<literal>&percent;eax</literal>">
+<!ENTITY ebx "<literal>&percent;ebx</literal>">
+<!ENTITY ecx "<literal>&percent;ecx</literal>">
+<!ENTITY edx "<literal>&percent;edx</literal>">
+<!ENTITY esp "<literal>&percent;esp</literal>">
+<!ENTITY ebp "<literal>&percent;ebp</literal>">
+]>
+<book>
+<title>Tools of the Trade</title>
+<subtitle>Moving to a  Deeper Understanding of Programming Languages</subtitle>
+
+<bookinfo>
+<author>
+<firstname>Jonathan</firstname>
+<surname>Bartlett</surname>
+</author>
+</bookinfo>
+
+<article>
+<title>Need to put somewhere else</title>
+
+<programlisting>
+<?lp-section-id?>Standard Function Begin<?lp-section-id-end?> =
+<?lp-code?>
+	pushl %ebp
+	movl  %esp, %ebp
+<?lp-code-end?>
+
+<?lp-section-id?>Standard Function End<?lp-section-id-end?> =
+<?lp-code?>
+	movl %ebp, %esp
+	popl %ebp
+	ret
+<?lp-code-end?>
+</programlisting>
+</article>
+
+&introduction-chapter;
+&state-management-introduction-chapter;
+&memory-management-chapter;
+&values-chapter;
+&fdl-appendix;
+&index;
+</book>

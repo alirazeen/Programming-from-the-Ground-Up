@@ -1,0 +1,81 @@
+<!-- NOTE - I don't think this chapter is used anymore, check later to make sure material got put elsewhere -->
+
+<chapter>
+<title>Advanced Branch Processing</title>
+
+<!-- Probable sequence
+     - count register
+     - branch prediction
+     - condition fields and bits
+     - multiple comparisons
+-->
+
+<para>
+In addition to branching conditionally based on the condition status register, the <literal>BO</literal> field discussed above can also indicate to the branch processor to do various tricks with the count register.  The counter register is used for looping.  The <literal>BO</literal> field is so powerful that within the same branch statement, you can do most combinations of the following:
+</para>
+
+<itemizedlist>
+<listitem><para>Decrement the count register</para></listitem>
+<listitem><para>Branch conditionally based on whether the count register is 0</para></listitem>
+<listitem><para>Branch conditionally based on whether the given status bit is set</para></listitem>
+<listitem><para>Hint to the processor whether or not the branch is likely to be taken</para></listitem>
+</itemizedlist>
+
+<para>
+There are four suffixes that you can use in place of <literal>c</literal> in the <literal>bc</literal> instruction to tell the assembler how to set up the <literal>BO</literal> field for you:
+</para>
+
+<variablelist>
+<varlistentry>
+<term>dnz</term>
+<listitem><para>Decrement the count register, then branch if the count register is not zero</para></listitem>
+</varlistentry>
+<varlistentry>
+<term>dz</term>
+<listitem><para>Decrement the count register, then branch if the count register is zero</para></listitem>
+</varlistentry>
+<varlistentry>
+<term>t</term>
+<listitem><para>This is placed after one of the above suffixes, if any, and includes an extra operand to the instruction before the address -- the field of the condition register to test.  In addition to the tests for the count register above, this will also branch if the given bit in the condition register is set to true.</para></listitem>
+</varlistentry>
+<varlistentry>
+<term>f</term>
+<listitem><para>This works like the <literal>t</literal>, but tests the condition register bit for false instead of true.</para></listitem>
+</varlistentry>
+</variablelist>
+
+<para>
+In addition, on instructions which do not test <emphasis>both</emphasis> the count register and the condition register, you can give hints to the branch predictor by prefixing the instruction with a <literal>+</literal> (indicating that a branch is likely) or a <literal>-</literal> (indicating that a branch is unlikely).  However, it is recommended generally to let the branch predictor take care of most cases.
+</para>
+
+<para>
+Now that we've gone over the basic form of how branch instructions are pieced together, let's take a look at some complete branch instructions and what they do:
+</para>
+
+<example>
+<title>Examples of Conditional Branch Instructions</title>
+<programlisting>
+#Decrement the count register, then branch to the address if the count register is not zero
+bdnz address
+
+#Decrement the count register, then branch to the address if the count register is zero AND the eq bit of the condition register is set
+bdzt eq, address
+
+#Decrement the count register, then branch to the address if the count register is zero AND the eq bit of the condition register is not set, and set the link register to be the next instruction after this one if the branch is taken
+bdzfl eq, address
+
+#Decrement the count register, then branch to the address if the count register is zero, set the link register to be the next instruction after this one, use absolute addressing for the address, and hint to the branch predictor that this branch will probably not be taken.
+-bdzla address
+
+#Branch to address if the less-than bit is set to true, and hint to the branch predictor that this branch will probably be taken.
++bt lt, address
+</programlisting>
+</example>
+
+<!-- NOTE --
+     Might be fun to do a speed run on multiple compares:
+       ** using jumps
+       ** using multiple cr fields and a final and instruction
+-->
+
+</chapter>

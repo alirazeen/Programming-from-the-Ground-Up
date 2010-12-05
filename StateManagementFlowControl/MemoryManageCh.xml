@@ -1,0 +1,359 @@
+<chapter>
+<title>Memory Management</title>
+
+<?lp-file id="mmmemorymanager" file="alloc.s" ?>
+<para>
+Memory management is the first piece of high-level functionality to
+tackle because it is so necessary.  Almost all algorithms rely on the
+ability to retrieve memory from the free store.  In addition, since most
+computer memories are not infinite, we need a way to put the data back.
+Therefore, we have two basic functions - <emphasis>allocate</emphasis>
+and <emphasis>deallocate</emphasis>.  Allocate will take as a parameter
+the size of data block requested.  It may return either a block the size
+requested or one bigger.  In addition, it may embed control information
+into the block.  However, the memory address we are given must be after
+any control information.  Deallocate will take as a parameter the memory
+address we were given from allocate, and it will recycle it withing the 
+system.
+</para>
+
+<programlisting>
+<?lp-section-id?>MM Memory Manager<?lp-section-id-end?> =
+<?lp-code?>
+.section .data
+<?lp-ref?>{MM Constants}<?lp-ref-end?>
+<?lp-ref?>{MM Global Variables}<?lp-ref-end?>
+
+.section .text
+<?lp-ref?>{MM Procedure to Initialize Global Variables}<?lp-ref-end?>
+<?lp-ref?>{MM Procedure to Allocate Memory}<?lp-ref-end?>
+<?lp-ref?>{MM Procedure to Deallocate Memory}<?lp-ref-end?>
+<?lp-code-end?>
+</programlisting>
+
+<sect1>
+<title>Allocate</title>
+
+<para>
+The allocate function will search free memory for a space of the size
+requested.  If it cannot find something the proper size, it will request
+the operating system for more memory for the program.  It uses a basic
+list structure for searching memory.  It looks like this:
+
+<programlisting>
+	#         #########################################################
+	#         #Available Marker#Size of memory#Actual memory locations#
+	#         #########################################################
+	#                                          ^--Returned pointer
+	#                                             points here
+</programlisting>
+
+and is defined by the following constants:
+
+<programlisting>
+<?lp-section-id?>MM Constants<?lp-section-id-end?> =
+<?lp-code?>
+######STRUCTURE INFORMATION####
+	.equ HEADER_SIZE, 8  #size of space for memory segment header
+	.equ HDR_AVAIL_OFFSET, 0 #Location of the "available" flag in the header
+	.equ HDR_SIZE_OFFSET, 4  #Location of the size field in the header
+<?lp-code-end?>
+</programlisting>
+
+The first field is the availability marker, which is set to 1 if the
+location is used and 0 otherwise.  We use the following constants to
+represent this:
+
+<programlisting>
+<?lp-section-id?>MM Constants<?lp-section-id-end?> +=
+<?lp-code?>
+	.equ UNAVAILABLE, 0  #This is the number we will use to mark
+	                     #space that has been given out
+	.equ AVAILABLE, 1    #This is the number we will use to mark
+	                     #space that has been returned, and is
+	                     #available for giving
+<?lp-code-end?>
+</programlisting>
+
+The next field is the actual size of
+the memory block.  Finally, the rest of the structure is the actual
+memory locations.  When we return the memory address, we give the address
+of this field.  This allows us to change the way we look up memory without
+altering the programs who use this interface.
+</para>
+
+<para>
+This program will follow the following outline:
+
+<programlisting>
+<?lp-section-id?>MM Procedure to Allocate Memory<?lp-section-id-end?> =
+<?lp-code?>
+	.globl allocate
+	.type allocate,@function
+	.equ ST_MEM_SIZE, 8         #stack position of the memory size 
+	                            #to allocate
+allocate:
+	<?lp-ref?>{Standard Function Begin}<?lp-ref-end?>
+	<?lp-ref?>{MM Prepare For Data Block Search}<?lp-ref-end?>
+	<?lp-ref?>{MM Search Memory For Free Block}<?lp-ref-end?>
+	<?lp-ref?>{MM Ask Operating System For Memory If None Is Available}<?lp-ref-end?>
+	<?lp-ref?>{MM Error Handling Code}<?lp-ref-end?>
+<?lp-code-end?>
+</programlisting>
+
+The registers will be used in this function as follows:
+
+<variablelist>
+
+<varlistentry>
+<term>&ecx;</term>
+<listitem><para>
+This register will hold the size of the requested memory.
+</para></listitem>
+</varlistentry>
+
+<varlistentry>
+<term>&eax;</term>
+<listitem><para>
+This will hold the address of the current memory segment being examined.
+This is useful because the return value should be in &eax; as well.
+</para></listitem>
+</varlistentry>
+
+<varlistentry>
+<term>&ebx;</term>
+<listitem><para>
+This register holds the address of the current break position, so we will
+know when to stop searching and just ask the operating system.
+</para></listitem>
+</varlistentry>
+
+<varlistentry>
+<term>&edx;</term>
+<listitem><para>
+This register holds the size of the current memory segment being examined.
+</para></listitem>
+</varlistentry>
+
+</variablelist>
+
+&eax;, &ebx;, and &ecx; all need to be initialized before beginning.
+
+<programlisting>
+<?lp-section-id?>MM Prepare for Data Block Search<?lp-section-id-end?> =
+<?lp-code?>
+	movl  ST_MEM_SIZE(%ebp), %ecx #%ecx will hold the size we are 
+	                            #looking for (which is the first
+	                            #and only parameter)
+
+	movl  heap_begin, %eax      #%eax will hold the current search
+	                            #location
+	movl  current_break, %ebx   #%ebx will hold the current break point
+<?lp-code-end?>
+</programlisting>
+
+This moves the global variables <emphasis>heap_begin</emphasis> and
+<emphasis>current_break</emphasis> into registers for faster manipulation.
+The <emphasis>heap_begin</emphasis> global variable defines the starting
+location of the free store.  <emphasis>current_break</emphasis> defines
+the current end of the free store.
+
+<programlisting>
+<?lp-section-id?>MM Global Variables<?lp-section-id-end?> =
+<?lp-code?>
+#######GLOBAL VARIABLES########
+	.section .data
+
+#This points to the beginning of the memory we are managing
+heap_begin:
+	.long 0
+
+#This points to one location past the memory we are managing
+current_break:
+	.long 0
+<?lp-code-end?>
+</programlisting>
+
+So how do we know where the heap begins and the current break is?  Well,
+when we initialize the memory subsystem, we ask the operating system where
+the current break is (the current break is the last addressable memory location
+on the system), and we initially set the current break and the beginning of
+the heap to be that location.  Like this:
+
+<programlisting>
+<?lp-section-id?>MM Procedure to Initialize Global Variables<?lp-section-id-end?> =
+<?lp-code?>
+	.globl allocate_init
+	.type allocate_init,@function
+allocate_init:
+	<?lp-ref?>{Standard Function Begin}<?lp-ref-end?>
+
+	#If the brk system call is called with 0 in %ebx, it
+	#returns the last valid usable address	
+	movl  $SYSCALL_BRK, %eax             #find out where the break is
+	movl  $0, %ebx              
+	int   $LINUX_SYSCALL
+
+	incl  %eax                  #%eax now has the last valid
+	                            #address, and we want the memory
+	                            #location after that
+
+	movl  %eax, current_break   #store the current break
+	movl  %eax, heap_begin      #store the current break as our
+	                            #first address.  This will cause
+	                            #the allocate function to get
+	                            #more memory from Linux the first
+	                            #time it is run
+
+	<?lp-ref?>{Standard Function End}<?lp-ref-end?>
+<?lp-code-end?>
+</programlisting>
+
+Now that we have our variables set up, we can now do the search.  We
+will do a sequential scan.  We will go to each memory segment, look at
+it's size and if it has been allocated.  If it's big enough and it's 
+available, we grab it, mark it as used, and return it.
+
+<programlisting>
+<?lp-section-id?>MM Search Memory For Free Block<?lp-section-id-end?>
+<?lp-code?>
+alloc_loop_begin:                   
+	#Check to see if we are at the end of the free store
+	cmpl  %ebx, %eax            
+	je    move_break
+
+	#Check to see if the current space is available for use
+	movl  HDR_SIZE_OFFSET(%eax), %edx  
+	cmpl  $UNAVAILABLE, HDR_AVAIL_OFFSET(%eax)  
+	je    next_location         
+
+	#Check to see if this piece of memory is large enough
+	cmpl  %edx, %ecx           
+	jle   allocate_here       
+
+next_location:
+	#Fast forward to the next memory segment
+	addl  $HEADER_SIZE, %eax    
+	addl  %edx, %eax            
+
+	#Check this one out
+	jmp   alloc_loop_begin      
+
+	
+allocate_here:
+	#The segment header for the segment we want to return is in %eax
+
+	#Mark space as unavailable
+	movl  $UNAVAILABLE, HDR_AVAIL_OFFSET(%eax)  
+	
+	#move %eax past the header to the usable memory 
+	addl  $HEADER_SIZE, %eax    
+
+	<?lp-ref?>{Standard Function End}<?lp-ref-end?>
+<?lp-code-end?>
+</programlisting>	
+
+Notice that there is a possibility that we won't have enough
+memory in free store to satisfy the request.  In that case, we
+will have to ask the operating system to move the break to
+make room for our new data element.
+
+<programlisting>	
+<?lp-section-id?>MM Ask Operating System For Memory If None Is Available<?lp-section-id-end?>
+<?lp-code?>
+	#At this point, %ebx holds the current break and %ecx holds the
+	#size of memory we need
+move_break:
+	#Make %ebx point to where we want the new break to be
+	addl  $HEADER_SIZE, %ebx    
+	addl  %ecx, %ebx            
+
+	#save needed registers
+	pushl %eax                  
+	pushl %ecx
+	pushl %ebx
+
+	#Reset the break to %ebx
+	movl  $SYSCALL_BRK, %eax            
+	int   $LINUX_SYSCALL        
+
+	#check for error conditions
+	cmpl  $0, %eax              
+	je    error
+
+	#restore saved registers
+	popl  %ebx                  
+	popl  %ecx
+	popl  %eax
+
+	#Mark the memory appropriately
+	movl  $UNAVAILABLE, HDR_AVAIL_OFFSET(%eax)  
+	movl  %ecx, HDR_SIZE_OFFSET(%eax)  
+
+	#Move %eax to the start of the usable memory so we can return it
+	addl  $HEADER_SIZE, %eax    
+
+	#save the new break
+	movl  %ebx, current_break   
+
+	<?lp-ref?>{Standard Function End}<?lp-ref-end?>
+<?lp-code-end?>
+</programlisting>
+
+Finally, if anything goes wrong, we just return a 0 to the client:
+
+<programlisting>
+<?lp-section-id?>MM Error Handling Code<?lp-section-id-end?> =
+<?lp-code?>
+error:
+	movl  $0, %eax              
+	<?lp-ref?>{Standard Function End}<?lp-ref-end?>
+<?lp-code-end?>
+</programlisting>
+
+</para>
+
+</sect1>
+
+<sect1>
+<title>Deallocate</title>
+
+<para>
+With the structure we've created, deallocation of memory is simple.
+Given the pointer to the memory region we gave in the allocate function,
+we simply back up to the header section, and mark the region as unallocated.
+Doing it this way, however, means that whenever you allocate memory, you never
+know what is going to already be there.  You can't assume that it just contains zeroes.  It will probably contain old, deleted values.
+</para>
+
+<para>
+Because this function may be called quite a bit, it contains lots of
+speedups.  For example, since we are not calling any sub-functions
+and not returning any values, we have omitted the standard function 
+entry and exit code.  That means that the beginning of stack variables
+is 4 bytes past &esp;, rather than 8 bytes past &ebp; like we normally
+see.
+</para>
+
+<programlisting>	
+<?lp-section-id?>MM Procedure to Deallocate Memory<?lp-section-id-end?> = 
+<?lp-code?>
+	.globl deallocate
+	.type deallocate,@function
+	.equ ST_MEMORY_SEG, 4     #stack position of the memory segment to free
+deallocate:
+	movl  ST_MEMORY_SEG(%esp), %eax 
+
+	#get the pointer to the real beginning of the memory
+	subl  $HEADER_SIZE, %eax  
+
+	#mark it as available
+	movl  $AVAILABLE, HDR_AVAIL_OFFSET(%eax)  
+
+	ret 
+<?lp-code-end?>
+</programlisting>
+
+</sect1>
+
+</chapter>

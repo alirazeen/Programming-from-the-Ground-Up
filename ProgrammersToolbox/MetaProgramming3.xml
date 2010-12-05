@@ -1,0 +1,971 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!DOCTYPE chapter PUBLIC "-//OASIS//DTD DocBook XML V4.1.2//EN">
+<chapter>
+<title>Enterprise Metaprogramming</title>
+
+<para>
+Enterprise metaprogramming is becoming more and more common all the
+time.  Graphical and textual utilities are making programming tasks
+easier and more descriptive.  These utilities are becoming more
+formalized under the OMG's Model Driven Architecture (MDA).  This
+article will explore how far metaprogramming can take us, as well as
+its limits.  It will describe the Model Driven Architecture and the
+problems it solves, and present a short example of a textual system
+that uses the Model Driven Architecture.
+</para>
+
+
+<sect1>
+<title>Theoretical Limits of Metaprogramming</title>
+
+<para>
+Many people abhore the idea of theoretical discussions.  However, for
+metaprogramming it is very important, because such a discussion will
+aid in discerning the marketing claims of various metaprogramming
+tools.  This is an area for which wild claims are sometimes made, and
+it is difficult to see where problems can arise.  The focus of this
+discussion is identifying both what the possibilities are for the
+future of metaprogramming, and what its inherent limits are.  Knowing
+both of these aid in choosing the right tools, as well as knowing what
+questions to ask of vendors.  
+</para>
+
+<sect2>
+<title>Graphical and Textual Metaprogramming</title>
+
+<para>
+The first two articles in this series focused on textual
+metaprogramming systems.  However, there are many metaprogramming
+systems which are graphical in nature.  Let's begin by
+examining a program represented textually and graphically, and see
+what the similarities and differences are.  For this example, we will
+use regular expressions.
+</para>
+
+<para>
+Regular expressions are basically a small sublanguage built for text
+processing, used to match and replace strings of characters.  For
+those of you not familiar with regular expressions, there are
+tutorials listed in the <ulink url="#resources">Resources</ulink>
+section.  Here is a small regular expression in Perl that will
+substitute all <literal>&lt;h1&gt;</literal>'s with
+<literal>&lt;h2&gt;</literal>'s in an HTML string:
+</para>
+
+<example>
+<title>Perl Regular Expression for Substituting HTML Tags</title>
+<programlisting>
+<![CDATA[
+$html_str =~ s!<(/?)h1>!<${1}h2>!g;
+]]>
+</programlisting>
+</example>
+
+<para>
+The language for doing a regular expression is not Perl, it is a
+domain-specific language that Perl happens to have a hook into.
+However, the exact syntax of the regular expression is not that
+important.  There are many other ways it could be written.  Basically,
+whether you are communicating to the computer in a full-featured
+programming language or a small domain-specific language, you have to
+have some way of communicating to the compiler or interpretter the
+symbols of that language.  We often do this by typing code, but there
+is no technical reason for us to limit ourselves in such a way.  For
+example, there is no technical reason (except that a parser simply
+hasn't been written yet) that you could not express the above regular
+expression like this:
+</para>
+
+<mediaobject>
+<imageobject>
+<imagedata fileref="RegExDiagramScaled.png" format="PNG" />
+</imageobject>
+<caption><para><emphasis>A Perl Regular Expression as a Diagram</emphasis></para></caption>
+</mediaobject>
+
+<para>
+This works not only for domain-specific languages, but also for
+general programming languages.  Since compilers operate on symbols,
+there is no constraint that the symbols have to come in as text --
+they can just as easily appear graphically.  There are several reasons we
+normally use text to program computers instead of graphics:
+</para>
+
+<itemizedlist>
+<listitem><para>Typing is often faster than having to position
+graphs</para></listitem>
+<listitem><para>The inertia of text-based programming systems (there
+are millions of people already trained to do this, and thousands of
+tools already capable of assisting you)</para></listitem>
+<listitem><para>Textual forms are often easier to think about and
+manipulate programmatically.</para></listitem>
+</itemizedlist>
+
+<para>
+In fact, for the case of regular expressions, it is fairly clear that
+it will be more difficult to enter in the code graphically.  However,
+note that in the two representations of the regular
+expression, the same amount of <emphasis>programming information</emphasis> is present in
+each graph.  This is the first main point I want to communicate: 
+<emphasis>graphical representations of programming concepts do
+not reduce the amount of programming involved</emphasis>.
+</para>
+
+<para>
+For some of you who have used visual tools for programming, this may
+seem contrary to experience.  However, this is because of the benefits
+of domain-specific languages, not specifically of the graphical
+approach.  This is evidenced by an example from Windows programming.
+Let's look at a Win32 resource script for building dialog boxes:
+</para>
+
+<example>
+<title>Example Win32 Resource Script</title>
+<programlisting>
+IDD_TEST DIALOG DISCARDABLE 0, 0, 200, 200
+STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Hello There!"
+FONT 8, "MS Sans Serif"
+BEGIN
+DEFPUSHBUTTON "OK",IDOK,108,8,50,14
+END
+</programlisting>
+</example>
+
+<para>
+Now, this requires the programmer to "put in" the same amount of
+information as if I had used a graphical tool to build the dialog box
+and position it.  The difference is that it is much easier to select
+widgets and position them with a mouse than it is to type out their
+names and then type in their coordinates, but the amount of
+information conveyed by the programmer to the computer is the same in
+both cases.  
+</para>
+
+<para>
+So what is it that makes the operation easier?  It is the restricted,
+domain-specific sublanguage that requires less programming, not the
+visual or textual nature of the tool.  This brings the following
+conclusions:
+</para>
+
+<itemizedlist>
+<listitem><para>Domain-specific languages may reduce the amount of
+programming involved.</para></listitem>
+<listitem><para>Some domain-specific languages are easier to enter
+textually, while others are easier to enter
+graphically.</para></listitem>
+<listitem><para>Whether a program in a domain-specific language is
+entered textually or graphically, the same amount of information flows
+from the programmer to the computer.</para></listitem>
+<listitem><para>Because graphical languages still must provide symbols
+to the computer for compilation or interpretation, graphical
+specifications will still be required to follow formal language
+parameters.  Such languages cannot be ad-hoc, any more than computer
+languages can be.  Graphical representations will have just as
+formalized of a graphical syntax and semantics as textual languages do.</para></listitem>
+</itemizedlist>
+
+
+<para>
+Now although graphical representations of programs contain the same
+amount of programmatic information as textual representations,
+graphical representations can usually contain more non-programmatic
+information, such as:
+</para>
+
+<itemizedlist>
+<listitem><para>Different components can be spatially arranged to make
+more sense to other people in a graphical environment.</para></listitem>
+<listitem><para>Graphs, drawings, and other graphical explanatory
+elements and visual cues can be added directly to the source code in a
+graphical environment to help explain a process.</para></listitem>
+<listitem><para>Code can be assigned to regions which are hidden or
+exposed depending on the detail of the view (i.e. being able to hide
+error-checking code when you just want to analyze the
+algorithm).</para></listitem>
+</itemizedlist>
+
+<para>
+Graphical models surely have the ability to take programming to a new
+level.  However, it is not because less information is passed from the
+programmer to the computer, but instead because more information can
+be passed from programmer to programmer in a more natural way.
+</para>
+
+</sect2>
+
+<sect2>
+<title>Metaprogramming, Programmers and Domain Experts</title>
+
+<para>
+Now that we've established that it is the domain-specific sublanguage
+that reduced the amount of programming involved, not necessarily the
+graphical nature, it is important to ask if we can ever reach a point
+where programming is done completely by domain experts, skipping the
+actual programmers to do the work, and letting the domain experts
+simply use metaprogramming tools to design and build their entire
+applications. 
+</para>
+
+<para>
+To answer this question, the first thing to think about is this:  what
+is it that programmers do for a programming project other than write
+code?  In my own experience, the most important role of the
+programmer/analyst is to identify all of the edge cases.  Programmers
+tend to think about issues of process more methodically, and therefore
+are often in the best position to help the domain expert identify and
+expound upon all of the edge cases.  Domain experts, left to
+themselves, will often leave large areas of the system underspecified,
+no matter how hard they try.  Performing ad-hoc solutions is usually
+just a part of doing business, and the need for absolute specification
+is very far from their way of thinking.
+</para>
+
+<para>
+The second thing that programmers do is they understand fully the
+syntax, semantics, abilities, and limitations of the languages that
+they program on.  As pointed out in the previous section, graphical
+languages are no less subject to issues of exact semantics than
+textual languages are, since they are both ultimately reduced to
+symbols.  Therefore, even in the best, most simplified graphical
+environments, it is still utterly necessary to have a full
+understanding of the tool being used and its semantics.
+</para>
+
+<para>
+Based on these two observations, I am confident that there will always
+be a need for programmers as long as there are programs to write.
+Now, there may come a day when programming is embedded enough into the
+schools and curriculums that there won't be a need for programming as
+a separate discipline.  In fact, I would welcome such a change.
+However, that would mean that instead of programming being simplified
+to a point where programmers are not needed, on the contrary, public
+education would be expounded enough where such simplifications may not
+need to be necessary!  The important point in all of this is that the
+role of being a domain expert is and will continue to be separate from
+the role of being a programmer, though those roles are sometimes
+played by the same people.
+</para>
+
+<para>
+Ultimately, graphical metaprograms are <emphasis>still
+programs</emphasis>, and thus require a programmer to implement
+correctly.
+</para>
+
+</sect2>
+
+<sect2>
+<title>Working at Multiple Levels of Abstraction</title>
+
+<para>
+One of the biggest problems in metaprogramming is the fact that the
+programmer almost always has to work in multiple levels of
+abstraction.  This can sometimes make the job of the programmer
+harder than it would be without the metaprogramming system, since the
+programmer not only needs to know the details of how to program the
+domain-specific languages and the general-purpose languages, but also
+the details of how they are each implemented, how to communicate
+between them, and what sort of impedance mismatches there are between
+them. 
+</para>
+
+<para>
+Often times, most of the code will be able to use the metaprogramming
+tools available to accomplish the task.  But the hardest part comes
+when they have to be mixed.  For example, if the metaprogramming
+system auto-generates a method within a class, but later that method
+must be tweaked.  The question then becomes, how does one implement
+that?  In some instances and with some tools, modifying the generated
+code immediately removes the program from within the purview of the
+metaprogramming system.  The metaprogram is no longer of any use 
+because the change must be made at a lower level.  There are some
+solutions to this problem, but ultimately it is very difficult if not
+impossible to solve completely.
+</para>
+
+<para>
+The best systems are those which allow you to work at multiple levels
+of abstraction within the metaprogramming system itself.  For example,
+in the previous article we discussed that the Scheme macro system
+allowed an easy mixing of macro and non-macro code.  Ultimately, what
+is needed is the ability to work at both a high-level and a low-level
+from within the metaprogramming tool itself, and simply mark for the
+tool where you need to transition to a lower-level.
+</para>
+
+</sect2>
+
+</sect1>
+
+<sect1>
+<title>A High-level View of The Model Driven Architecture</title>
+
+<para>
+Hopefully you now have a better understanding of what is and isn't
+possible with metaprogramming tools and why.  Now we will turn to
+enterprise metaprogramming, and look and see how it is both similar
+and different from other metaprogramming practices.
+</para>
+
+<para>
+First of all enterprise metaprogramming ultimately is just
+metaprogramming.  What differentiates ordinary metaprogramming from
+enterprise metaprogramming are two things:
+</para>
+
+<itemizedlist>
+<listitem><para>the problems that it tries to solve</para></listitem>
+<listitem><para>the cardinality of the relationship between source and
+destination languages</para></listitem>
+</itemizedlist>
+
+<sect2>
+<title>Problems Solved by the Model Driven Architecture</title>
+
+<para>
+The first difference between traditional metaprogramming and
+enterprise metaprogramming are the problems which are attempted to be
+solved.  Traditionally, metaprogramming has been mostly about these
+things:
+</para>
+
+<itemizedlist>
+<listitem><para>reducing the software development release cycle
+length</para></listitem>
+<listitem><para>forcing programs to follow system
+constraints</para></listitem>
+<listitem><para>make the programming language follow the domain model
+more closely</para></listitem>
+</itemizedlist>
+
+<para>
+Enterprise metaprogramming involves these as well, but also adds other
+considerations.
+</para>
+
+<para>
+First of all, one problem has always been that models are often
+developed at the beginning of a project, and then fall into
+irrelevancy as the project progresses, because the realities of coding
+mean that the model is not very accurate, and changing the model
+continually will only make the project late.  It seems almost wasteful
+to design a model at the beginning and then not use it.  It also seems
+wasteful to develop a model once in a charting program, and then
+re-develop it later as code.  Therefore, <emphasis>the Model Driven
+Architecture aims to make the models developed at the beginning of the
+project part of the code itself, both so that it stays current, and is
+not redundant to the actually coding process</emphasis>.
+</para>
+
+<para>
+Another problem is a related one, and it is that of communication.
+Code is very difficult for a non-programmer to read.  However, if code
+were written in a graphical manner, then it would be much easier to
+discuss coding matters with non-coders.  Note that this would actually
+make the code more difficult to develop, since aesthetics would have
+to be included in the coding, but ultimately it would make the
+communication between the programmer and the domain experts much more
+efficient, as the domain expert could comment on the code itself,
+represented in a graphical, domain-friendly nature.
+</para>
+
+<para>
+Another problem is portability.  Businesses by their very nature often
+use very different tools.  This is not necessarily because of a lack
+of technological forethought, but is simply a reality of business.
+First of all, many businesses purchase other businesses, and therefore
+their IT must be mixed.  Second, there are so many small needs in
+business that it is literally impossible for an IT department to come
+up with a cohesive solution to every need.  Therefore, it should
+simply be assumed that in a large organization there will be a diverse
+set of technologies that must be brought together.  Because of this,
+the metaprogramming system should be customizable to produce output
+for a wide variety of systems.  This will be discussed later in
+further detail.
+</para>
+
+<para>
+The final problem is maintenance.  Ultimately, systems need to not
+just be built, but be maintained.  Because the model is tied directly
+into the code itself, maintenance becomes easier.  The programmers can
+communicate to future programmers graphically, and use not only text,
+but also graphics and charts to explain their programs.  In fact, in
+many cases the graphs and charts will themselves be the program!
+</para>
+
+</sect2>
+
+<sect2>
+<title>Platform-specific and Platform-independent models</title>
+
+<para>
+The core concept which aims to solve or alleviate the above-mentioned
+problems is the <emphasis>platform-independent model</emphasis>.  The
+Model Driven Architecture has essentially three tiers:
+</para>
+
+<variablelist>
+<varlistentry>
+<term>The Code</term>
+<listitem><para>
+Ultimately, all of our models will become code.  This is the
+bottom-most tier of the Model Driven Architecture.
+</para></listitem>
+</varlistentry>
+<varlistentry>
+<term>The Platform-Specific Model</term>
+<listitem><para>
+The metaprogramming systems described in the previous articles are
+essentially platform-specific models.  They are at a higher level than
+the programming languages themselves, but ultimately are directly tied
+to them.  The translation and relationship between the
+platform-specific model and the code are usually fairly obvious.  This
+model is often abbreviated as PSM.
+</para></listitem>
+</varlistentry>
+<varlistentry>
+<term>The Platform-Independent Model</term>
+<listitem><para>
+The Platform-Independent Model, often referred to as the PIM, is what
+makes enterprise metaprogramming unique.  PIMs, as you may have
+guessed, get translated into PSMs.  However, what makes them different
+is that the PIM is usually translated into
+<emphasis>multiple</emphasis> PSMs, and are usually not very tied to
+any destination PSM or language.
+</para></listitem>
+</varlistentry>
+</variablelist>
+
+<para>
+Having a PIM which can be translated into multiple PSMs is useful for
+two primary reasons:
+</para>
+
+<itemizedlist>
+<listitem><para>having to write the same program for two different
+platforms, due either to having heterogenous systems or to
+transitioning from a legacy system to a newer system</para></listitem>
+<listitem><para>having a single descriptive model translate into
+multiple aspects of a system</para></listitem>
+</itemizedlist>
+
+<para>
+The second reason is by far the most important of the two.  For
+example, let's say that you have a data model that you want to use in
+a C++ database program.  With a platform independent model, you can
+write a single source file and have it translate into multiple aspects
+of the final system.  For example, the data model could translate
+into:
+</para>
+
+<itemizedlist>
+<listitem><para>a skeleton C++ class, including operations for
+serializing the class to the database</para></listitem>
+<listitem><para>an SQL script for creating the database on which the
+data model is based</para></listitem>
+<listitem><para>a simple user-interface for data
+loading</para></listitem>
+</itemizedlist>
+
+<para>
+So, from a single platform-independent model, you would get three
+separate platform-specific models.  Note that there is no real
+difference between a platform-specific model and code, it is merely
+one of degree.  The important idea is that of translating a single
+source file into multiple platform-specific ones, each covering a
+different aspect of the system.
+</para>
+
+<para>
+Coding in the Model Driven Architecture requires that the programmer
+be able to program on all three levels based on the task at hand, and
+perhaps even be able to write translators between source models and
+destination models.  Some parts of an application will be able to be
+written as a Platform-Independent model, where most of the legwork
+will be done by the metaprogramming system.  Other parts will be done
+as a Platform-Specific model, where the features of the model will be
+heavily tied to the purpose and abilities of the language.  Finally,
+some things will have to be written in code, as usual.  The benefits
+to the Model Driven Architecture are:
+</para>
+
+<itemizedlist>
+<listitem><para>that the models for the system have continued
+usefulness for the life of the software</para></listitem>
+<listitem><para>that much of the redundancy that is common in
+applications with multiple aspects is eliminated</para></listitem>
+<listitem><para>that communication between the programmer, other
+programmers, and domain experts is enhanced</para></listitem>
+</itemizedlist>
+
+</sect2>
+
+</sect1>
+
+<sect1>
+<title>A Short Example: Building Code from Dia Diagrams</title>
+
+<para>
+One of the most interesting things about the Model Driven Architecture
+is that while there are specifications involved, it is at its core
+mostly an idea, a vision, and a process.  A tool is an MDA tool if it
+implements some or all of the vision of the MDA.  Of course, being an
+OMG standard UML is the preferred modelling language.  But the vision
+of MDA greatly supercedes the technologies that it uses.
+</para>
+
+<para>
+For our example, we are going to create an MDA tool that takes
+class diagrams from the graphing program Dia and produces both SQL
+code for database tables and C++ code for simple C++ classes.  This
+doesn't live up to the full expectation of MDA tools, but it gives a
+good example of generating multiple platform-specific models (well, we're
+generating actual code in this case) from a single
+platform-independent model.
+</para>
+
+<sect2>
+<title>Creating the diagram</title>
+
+<para>
+To create the diagram, we're going to fire up Dia and use its UML
+graphing capabilities.  When you start up Dia, it looks like this:
+</para>
+
+<mediaobject>
+<imageobject>
+<imagedata fileref="dia1.png" format="PNG" />
+</imageobject>
+<caption><para><emphasis>The Dia program</emphasis></para></caption>
+</mediaobject>
+
+<para>
+There is a menu of object types on the main toolbox.  Choose the "UML"
+object set.  The very first object is a UML Class.  Select it and then
+add it to your diagram.  Your diagram will look something like this:
+</para>
+
+<mediaobject>
+<imageobject>
+<imagedata fileref="dia2.png" format="PNG" />
+</imageobject>
+<caption><para><emphasis>A UML class in a new drawing</emphasis></para></caption>
+</mediaobject>
+
+<para>
+If you double-click on the new class glyph, it will bring up a screen
+like this:
+</para>
+
+<mediaobject>
+<imageobject>
+<imagedata fileref="dia3.png" format="PNG" />
+</imageobject>
+<caption><para><emphasis>Basic class information</emphasis></para></caption>
+</mediaobject>
+
+<para>
+This dialog box lets you set up the class information.  Since our
+example will be very limitted, the only field on this tab that is of
+use is the "Name" field.  For our example, we're calling this the
+"Person" class.  Next, you will want to add attributes.  Therefore, go
+to the "Attributes" tab.  Here we will add three fields: "id", "name",
+and "address", of types "int", "text", and "text", respectively.  Your
+screen should look like this:
+</para>
+
+<mediaobject>
+<imageobject>
+<imagedata fileref="dia4.png" format="PNG" />
+</imageobject>
+<caption><para><emphasis>Editting class attributes</emphasis></para></caption>
+</mediaobject>
+
+<para>
+Click "OK" on the dialog box to finish.  You can add additional
+classes if you want.  Once you are done, you will need to save the
+diagram.  The dialog box for saving looks like this:
+</para>
+
+<mediaobject>
+<imageobject>
+<imagedata fileref="dia5.png" format="PNG" />
+</imageobject>
+<caption><para><emphasis>Dia's save dialog box</emphasis></para></caption>
+</mediaobject>
+
+<para>
+<emphasis>Be sure when saving that the "compress diagram files" box is
+not checked.</emphasis>
+</para>
+
+</sect2>
+
+<sect2>
+<title>A quick overview of the Dia file format</title>
+
+<para>
+A Dia file is simply an XML file using Dia's own schema and
+namespace, either compressed or uncompressed (our program will only
+deal with uncompressed files).  The layout is fairly simple.  Here are
+some portions of the file we just made:
+</para>
+
+<example>
+<title>Example Dia file</title>
+<programlisting>
+<![CDATA[
+<?xml version="1.0" encoding="UTF-8"?>
+<dia:diagram xmlns:dia="http://www.lysator.liu.se/~alla/dia/">
+  <dia:diagramdata>
+    <dia:attribute name="background">
+      <dia:color val="#ffffff"/>
+    </dia:attribute>
+...
+...
+  </dia:diagramdata>
+  <dia:layer name="Background" visible="true">
+    <dia:object type="UML - Class" version="0" id="O0">
+      <dia:attribute name="obj_pos">
+        <dia:point val="11.6,6.35"/>
+      </dia:attribute>
+...
+...
+      <dia:attribute name="name">
+        <dia:string>#Person#</dia:string>
+      </dia:attribute>
+...
+      <dia:attribute name="attributes">
+        <dia:composite type="umlattribute">
+          <dia:attribute name="name">
+            <dia:string>#id#</dia:string>
+          </dia:attribute>
+          <dia:attribute name="type">
+            <dia:string>#int#</dia:string>
+          </dia:attribute>
+          <dia:attribute name="value">
+            <dia:string>##</dia:string>
+          </dia:attribute>
+...
+...
+        </dia:composite>
+      </dia:attribute>
+      <dia:attribute name="operations"/>
+      <dia:attribute name="template">
+        <dia:boolean val="false"/>
+      </dia:attribute>
+      <dia:attribute name="templates"/>
+    </dia:object>
+  </dia:layer>
+</dia:diagram>
+]]>
+</programlisting>
+</example>
+
+<para>
+This file has a lot of information in it, and only a small part of it
+is useful to our purposes.  What we are primarily interested are the
+XML trees that begin with something like 
+<literal>&lt;dia:object type="UML - Class" version="0" id="O0"&gt;</literal>. 
+And from these, we are only really just interested in the name of the
+class, and the name and type of each attribute.  The name of the class
+is in an attribute named "name".  The attributes are all in a subtree
+called "attributes", with each attribute being a "umlatrribute", with
+corresponding "name" and "type" fields.  Therefore, within the sea of
+XML tags and data, we must sort through them and grab the portions we
+are interested in.
+</para>
+
+</sect2>
+
+<sect2>
+<title>MDA Implementation</title>
+
+<para>
+The implementation of this will be a simple SAX parser written in
+Scheme using the SSAX module (for more information about Scheme, SAX,
+or the SSAX module, see the <ulink
+url="#references">References</ulink> section.  The parser will read
+from one <literal>.dia</literal> file, and write to an SQL file and a
+C++ source file.  For each class it will create a C++ class and a
+database table.  In order to make the example as simple as possible,
+only attributes are supported, not operations, and no database
+loading/saving functions were implemented.  However, adding those
+features are incremental steps from the parser shown below.
+</para>
+
+<para>
+Here is the code for the MDA application, written for use with Chicken
+Scheme (other schemes would probably only require slight modification
+of the line that loads in the SSAX module):
+</para>
+
+<example>
+<title>Full program listing for MDA application</title>
+<programlisting>
+<![CDATA[
+;;Load the Scheme SAX parser
+(require-extension ssax)
+
+;;Dia's string values are surrounded with '#'s.  This
+;;removes the '#'s.
+(define (munge-dia-value val)
+  (let (
+	(str-len (string-length val)))
+    (if (<= str-len 2)
+	""
+	(substring val 1 (- str-len 1)))))
+
+;;The SAX parser function
+(define (dia-mda-parser input-port cpp-out-port sql-out-port)
+  (let (
+	;;State variables -- these would probably be more correct
+	;;                   to keep with the seed, but putting them
+	;;                   here makes them easier to manage
+
+	;this is used for proper handling of comma-separated lists
+	(first #t) 
+	;these are used to store the type and name of an attribute
+	;before its read to be printed out
+	(attr-type "")
+	(attr-name ""))
+
+    ;;Write the C++ header
+    (display "#include <string>" cpp-out-port)(newline cpp-out-port)
+    (display "using namespace std;" cpp-out-port)(newline cpp-out-port)
+    (display "typedef string text;" cpp-out-port)(newline cpp-out-port)
+
+    ;;SSAX Macro to build the parser
+    ((SSAX:make-parser
+
+      ;;on-element function
+      NEW-LEVEL-SEED
+      (lambda (elem-gi attrs namespaces expected-content seed)
+	;;The element name is the cdr of the name list
+	(define element (cdr elem-gi))
+	;;common attributes
+	(define name-attr (assq 'name attrs))
+	(define type-attr (assq 'type attrs))
+
+	;;Giant state switch - determine what element and state
+	;;                     we are in and what state we should
+	;;                     change to, if any
+	;;
+	;;Note that the return value of this function (and the others)
+	;;becomes the new "seed" value, so we are using it to record
+	;;the current state.  More information about the inner
+	;;workings of SSAX are in the references section.
+	(cond
+	 ;Check to begin a top-level class
+	 ((and (eq? seed 'top) (eq? element 'object) (equal? (cdr type-attr) "UML - Class"))
+	  (set! first #t) ;reset the "comma" state
+	  'object)
+	 ;Check whether to be looking for the class name
+	 ((and (eq? seed 'object) (eq? element 'attribute) (equal? (cdr name-attr) "name"))
+	  'class-name)
+	 ;Check whether we are ready to read the class name
+	 ((and (eq? seed 'class-name) (eq? element 'string))
+	  'read-class-name)
+	 ;Check to see if we should switch to attribute mode
+	 ((and (eq? seed 'object) (eq? element 'attribute) (equal? (cdr name-attr) "attributes"))
+	  'class-attrs)
+	 ;Check to see if we should start looking for attribute info
+	 ((and (eq? seed 'class-attrs) (eq? element 'composite) (equal? (cdr type-attr) "umlattribute"))
+	  'class-attribute)
+	 ;Check whether we should be looking for the attribute name
+	 ((and (eq? seed 'class-attribute) (eq? element 'attribute) (equal? (cdr name-attr) "name"))
+	  'class-attribute-name)
+	 ;Check whether we should be reading the attribute name
+	 ((and (eq? seed 'class-attribute-name) (eq? element 'string))
+	  'read-class-attribute-name)
+	 ;Check whether we should be looking for the attribute type
+	 ((and (eq? seed 'class-attribute) (eq? element 'attribute) (equal? (cdr name-attr) "type"))
+	  'class-attribute-type)
+	 ;Check whether we should be reading the attribute type
+	 ((and (eq? seed 'class-attribute-type) (eq? element 'string))
+	  'read-class-attribute-type)
+	 (else seed)))
+
+      ;;after-element function
+      FINISH-ELEMENT
+      (lambda (elem-gi attrs namespaces parent-seed seed)
+        ;;often-used values
+	(define element (cdr elem-gi))
+	(define type-attr (assq 'type attrs))
+
+	(cond 
+	 ;After finishing the umlattribute element, write out the attribute information
+	 ((and (eq? element 'composite) (equal? (cdr type-attr) "umlattribute"))
+	  (if first
+	      (set! first #f)
+	      (display ", " sql-out-port))
+	  (display (string-append attr-name " " attr-type) sql-out-port) 
+	  (display (string-append "\t" attr-type " " attr-name ";") cpp-out-port) (newline cpp-out-port))
+	 ;After finishing the UML Class object element, write the closing characters
+	 ((and (eq? element 'object) (equal? (cdr type-attr) "UML - Class"))
+	  (display ");" sql-out-port)(newline sql-out-port)
+	  (display "};" cpp-out-port)(newline cpp-out-port))
+	 (else #f))
+
+	;Restore parent information
+	parent-seed)
+
+      ;;character data function
+      CHAR-DATA-HANDLER
+      (lambda (s1 s2 seed)
+
+	(cond
+	 ;Read the class name and write out the appropriate statements
+	 ((eq? seed 'read-class-name)
+	  (display "class " cpp-out-port)
+	  (display (munge-dia-value s1) cpp-out-port)
+	  (display " {" cpp-out-port) (newline cpp-out-port)
+	  (display "public:" cpp-out-port) (newline cpp-out-port)
+	  (display "create table " sql-out-port)
+	  (display (munge-dia-value s1) sql-out-port)
+	  (display " (" sql-out-port))
+	 ;Read and save the attribute name
+	 ((eq? seed 'read-class-attribute-name)
+	  (set! attr-name (munge-dia-value s1)))
+	 ;Read and save the attribute type
+	 ((eq? seed 'read-class-attribute-type)
+	  (set! attr-type (munge-dia-value s1)))
+	 (else #f))
+
+	seed)
+      ) input-port 'top)))
+  
+;;;Main Program;;;
+(let (
+      ;;Open Files;;
+      (tables-in (open-input-file "tables.dia"))
+      (cpp-out (open-output-file "tables.cpp"))
+      (sql-out (open-output-file "tables.sql")))
+
+  ;;Process Data;;
+  (dia-mda-parser tables-in cpp-out sql-out)
+
+  ;;Close Files;;
+  (close-input-port tables-in)
+  (close-output-port cpp-out)
+  (close-output-port sql-out))
+]]>
+</programlisting>
+</example>
+
+<para>
+Notice that for simplicity, the input and output file names are
+hardcoded, so be sure to save the Dia file in the same directory with
+the name "tables.dia".  Save the program as
+<filename>mda.scm</filename>.  To run the program, simply do:
+<literal>csi mda.scm</literal>.  With the data we put into Dia, it
+will produce two output files.  The SQL output will look like this:
+</para>
+
+<example>
+<title>SQL output from the MDA program</title>
+<programlisting>
+<![CDATA[
+create table Person (id int, name text, address text);
+]]>
+</programlisting>
+</example>
+
+<para>
+The C++ file will look like this:
+</para>
+
+<example>
+<title>C++ output from the MDA program</title>
+<programlisting>
+<![CDATA[
+#include <string>
+using namespace std;
+typedef string text;
+class Person {
+public:
+	int id;
+	text name;
+	text address;
+};
+]]>
+</programlisting>
+</example>
+
+<para>
+So for under 200 lines of code we can now create diagrams instead of
+writing SQL and C++.  Of course, it's even more fun when someone else
+writes the conversion program.
+</para>
+
+</sect2>
+</sect1>
+
+<sect1>
+<title>Conclusion</title>
+
+<para>
+To review, we've covered:
+</para>
+
+<itemizedlist>
+<listitem><para>the limits and promises of metaprogramming systems</para></listitem>
+<listitem><para>what sets enterprise metaprogramming apart from other types of metaprogramming</para></listitem>
+<listitem><para>what the basic concepts of the Model Driven Architecture are</para></listitem>
+<listitem><para>a simple example of how to create a Model Driven
+Architecture conversion for a simple application</para></listitem>
+</itemizedlist>
+
+<para>
+As you can see, the Model Driven Architecture is a powerful idea. 
+It is both rooted in a strong tradition of metaprogramming, and yet goes 
+beyond traditional methods using its idea of platform-independent 
+models.
+</para>
+
+</sect1>
+
+<!--- RESOURCES
+
+<resource-list>
+<ul>
+<li>For more information about regular expressions, see <a href="http://www.regular-expressions.info/">the web's premier site on the subject</a>.</li>
+<li>The OMG has <a href="http://www.omg.org/mda/">section of their website dedicated to the MDA</a></li>
+<li>Alphaworks has <a href="http://www.alphaworks.ibm.com/tech/dptk?open&S_PKG=&S_TACT=105AGX59&S_CMP=GR&ca=dgr-lnxd01dptk">an Eclipse-based toolkit for developing MDA transformations</a>
+<li>For a true open-source graphical MDA tool, check out <a href="http://www.andromda.org/">AndroMDA</a>.</li>
+<li>Eclipse has an MDA tool called the <a href="http://www.eclipse.org/emf/">Eclipse Modelling Framework</a>.</li>
+<li>Here is an <a href="http://www.klasse.nl/english/mda/mda-faq.html">MDA FAQ</a>.</li>
+<li><a href="http://www.amazon.com/exec/obidos/ASIN/032119442X/freeeducation-20/">MDA Explained</a> is an excellent book covering the basics of the MDA.</li>
+<li>A <a href="http://www.saxproject.org/">resource site for SAX</a>, the Simple API for XML</a>.</li>
+<li><a href="http://okmij.org/ftp/Scheme/xml.html">The official SSAX page</a> has lots of information about SSAX and other aspects of manipulating XML in Scheme.</li>
+<li>Here is a great <a href="http://www-128.ibm.com/developerworks/library/x-matters31.html">tutorial on SSAX</a>.</li>
+<li>Chicken Scheme has its own <a href="http://www.call-with-current-continuation.org/eggs/ssax.html">SSAX package</a>.</li>
+<li>Here is more information about <a href="http://www.call-with-current-continuation.org/">Chicken Scheme</a>.</li>
+<li>here is <a href="http://www.htdp.org/">the best resource for Scheme beginners</a>.</li>
+</ul>
+</resource-list>
+
+-->
+
+</chapter>
+
+
+<!--
+<note><para>
+In most non-trivial situations, full programming languages must be
+used to supplement the domain-specific languages.
+</para></note>
+-->
+
+<!--
+This includes both programmatic edge-cases (when using or combining
+libraries) as well as domain edge-cases (where the domain definition
+is inconsistent or under-specified).  The programmer's job in the
+former case is to solve the problem himself by special-casing or
+reorganizing the code.  In the latter case his job is to communicate
+the difficulties to the domain experts so that they can specify the
+solution.
+</para>
+-->

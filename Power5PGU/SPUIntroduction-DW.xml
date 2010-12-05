@@ -1,0 +1,972 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<dw-document xsi:noNamespaceSchemaLocation="http://dw.raleigh.ibm.com/developerworks/library/schema/4.0/dw-document-4.0.xsd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+<dw-article local-site="worldwide" ratings-form="auto" related-contents="auto" toc="auto" skill-level="3">
+<id cma-id="" domino-uid="" content-id="" original="yes"/>
+<keywords content="FIXME -- ADD KEYWORDS" />
+
+<!-- FIXME - update meta -->
+<meta-last-updated day="09" month="12" year="2006" initials="jlb"/>
+
+<content-area-primary name="linux" />
+
+<title>An Introduction to Programming the Playstation 3's Synergistic Processing Elements</title>
+
+<author jobtitle="Director of Technology" company="New Medio" email="johnnyb@eskimo.com"  >
+<bio>Jonathan Bartlett is the author of the book <a href="http://www.cafeshops.com/bartlettpublish.8640017"><i>Programming from the Ground Up</i></a> which is an introduction to programming using Linux assembly language.  He is the lead developer at New Medio, developing web, video, kiosk, and desktop applications for clients.
+</bio>
+<name>Jonathan Bartlett</name>
+</author>
+
+<!-- FIXME - update date published -->
+<date-published day="09" month="12" year="2006" /><abstract>
+In the last article, we installed Linux on the PS3 and did a short example program.  In this article, we will begin looking in-depth at the Cell processor's Synergistic Processor Elements (SPEs) and how they work at the lowest level.
+</abstract><docbody>
+
+<heading refname="" type="major" toc="yes" alttoc="">An Overview of the SPEs</heading>
+<p>
+The last article gave an overview of the Cell processor (for other overviews, see the resources at the end of the article).  This article begins an in-depth discussion of the Cell's Synergistic Processing Elements (SPEs).  (for an in-depth discussion about programming the Power Processing Element (PPE) see <a href="http://www-128.ibm.com/developerworks/library/l-powasm1.html">this series</a>).  Because the SPEs use such a different architecture, we will be beginning our look into them in assembly language to get the full feel for what is happening.  Later we will move on to programming them in C, but assembly language will give a better view of the distinctiveness of the processor.  Then, when we move to C, you will have a better understanding of how different coding decisions may affect performance.  This article will focus on the basic syntax and usage of SPE assembly language, the ABI (the <i>application binary interface</i>, which are the function calling conventions of the platform), and how to communicate between the SPE and the PPE.  The next article will go into how to use the unique features of the SPE's assembly language to optimize your code.
+</p>
+
+<p>
+As mentioned in the previous article, the Cell consists of a Power Processing Element (PPE) which has several satellite Synergistic Processing Elements (SPEs).  The PPE is responsible for running the operating system, resource management, and input/output.  The SPEs are responsible for data processing tasks. The SPEs do not have direct access to main memory, but only a small (256K on the PS3) <i>local store</i> (LS) which is in an independent, 32-bit address space.  An address within the local store's address space is called a <i>local store address</i> (LSA) while an address within the controlling process on the PPE is called an <i>effective address</i> (EA).  The SPEs include an attached <i>memory flow controller</i> (MFC).  The SPEs use the MFC to transfer data between the local store and main memory. 
+</p>
+
+<p>
+The Synergistic Processing Unit (SPU) is the part of the SPE which actually runs your code.  The SPU has 128 general-purpose registers, each 128 bits wide.  However, the point of the SPU is not to do operations on 128-bit values.  Instead, the processor is a <i>vector</i> processor.  This means that each register is divided into multiple, smaller values, and instructions operate on all of the values simultaneously.  Normally, the registers are treated as four distinct 32-bit values (32 bits is considered the word size on the SPUs), though they can also be treated as sixteen 8-bit values (bytes), eight 16-bit values (halfwords), two 64-bit values (doublewords), or as a single 128-bit value (quadword).  The code will be looking at in this article is actually non-vector (also known as <i>scalar</i>) code, meaning that it only works with one value at a time.  It will use some vector operations, but we will only be concerned with one value within each register - the others we will simply ignore.  The next article will deal with vector operations.
+</p> 
+
+<p>
+This article does not require that you be experienced with assembly language, though it would be helpful.  Some features of the SPE will be compared and contrasted with the features of the PPE, though knowledge of the PPE is also not required.  For a discussion of PPE features, see <a href="http://www-128.ibm.com/developerworks/library/l-powasm1.html">this article series</a>.
+</p>
+
+<p>
+The build commands in this article assume that you have Yellow Dog Linux installed according to the instructions of the <a href="">previous article</a>.  If you are using another distribution, some of the command names and flags may change.  For example, if you are using the IBM System Simulator, then all references to <code type="inline">gcc</code> should be changed to <code type="inline">ppu-gcc</code> and all references to <code type="inline">embedspu</code> should be changed to <code type="inline">ppu-embedspu</code>.  Depending on where the libraries and header files are installed, additional flags may also need to be passed to find them.
+</p>
+
+
+<heading refname="" type="major" toc="yes" alttoc="">A Simple Example Program</heading>
+
+<p>
+To begin looking at SPU assembly language, we will enter in a simple program for calculating the factorial of a 32-bit number using a recursive algorithm.  The recursive nature of the algorithm will help us illustrate the standard ABI.
+</p>
+
+<p>
+For reference, here is the C code which would perform the same function:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 1. C Version of Factorial Program</heading>
+int number = 4;
+int main() {
+	printf("The factorial of %d is %d\n", number, factorial(number);
+}
+
+int factorial(int num) {
+	if(num == 0) {
+		return 1;
+	} else {
+		return num * factorial(num - 1);
+	}
+}
+</code>
+
+
+<p>
+Now let's enter in the assembly language version of this program, and then we can discuss what each line means.  Enter the following as <filename>factorial.s</filename>:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 2. First SPE Program</heading>
+###DATA SECTION###
+.data
+
+##GLOBAL VARIABLE##
+#Alignment is _critical_ in SPU applications.
+#This aligns to a 16-byte (128-bit) boundary
+.align 4
+#This is the number
+number:
+        .long 4
+
+.align 4
+output:
+	.ascii "The factorial of %d is %d\n\0"
+
+##STACK OFFSETS##
+#Offset in the stack frame of the link register
+.equ LR_OFFSET, 16
+#Size of main's stack frame (back pointer + return address)
+.equ MAIN_FRAME_SIZE, 32
+#Size of factorial's stack frame (back pointer + return address + local variable)
+.equ FACT_FRAME_SIZE, 48
+#Offset in the factorial's stack frame of the local "num" variable
+.equ LCL_NUM_VALUE, 32
+
+
+###CODE SECTION###
+.text
+
+##MAIN ENTRY POINT
+.global main
+.type main,@function
+main:
+	#PROLOGUE#
+	stqd $lr, LR_OFFSET($sp)
+	stqd $sp, -MAIN_FRAME_SIZE($sp)
+	ai $sp, $sp, -MAIN_FRAME_SIZE
+
+	#FUNCTION BODY#
+        #Load number as the first parameter (relative addressing)
+        lqr $3, number
+
+        #Call factorial
+        brsl $lr, factorial
+
+	#Display Factorial
+	#Result is in register 3 - move it to register 5 (third parameter)
+	lr $5, $3
+	#Load output string into register 3 (first parameter)
+	ila $3, output
+	#Put original number in register 4 (second parameter)
+	lqr $4, number
+	#Call printf (this actually runs on the PPE)
+	brsl $lr, printf
+
+	#Load register 3 with a return value of 0
+	il $3, 0
+
+	#EPILOGUE#
+	ai $sp, $sp, MAIN_FRAME_SIZE
+	lqd $lr, LR_OFFSET($sp)
+	bi $lr
+
+##FACTORIAL FUNCTION
+factorial:
+        #PROLOGUE#
+        #Before we set up our stack frame,
+        #store link register in caller's frame
+        stqd $lr, LR_OFFSET($sp)
+        #Store back pointer before reserving the stack space
+        stqd $sp, -FACT_FRAME_SIZE($sp)
+        #Move stack pointer to reserve stack space
+        ai $sp, $sp, -FACT_FRAME_SIZE
+        #END PROLOGUE#
+
+        #Save arg 1 in local variable space
+        stqd $3, LCL_NUM_VALUE($sp)
+        #Compare to 0, and store comparison in reg 4
+        ceqi $4, $3, 0
+        #Do we jump? (note that the "zero" we are comparing
+        #to is the result of the above comparison)
+        brnz $4, case_zero
+
+case_not_zero:
+        #remove 1, and use it as the function argument
+        ai $3, $3, -1
+        #call factorial function (return value in reg 3)
+        brsl $lr, factorial
+        #Load in the value of the current number
+        lqd $5, LCL_NUM_VALUE($sp)
+        #multiply the last factorial answer with the current number
+        #store the answer in register 3 (the return value register)
+        mpyu $3, $3, $5
+
+	#EPILOGUE#
+        #Restore previous stack frame
+        ai $sp, $sp, FACT_FRAME_SIZE
+        #Restore link register
+        lqd $lr, LR_OFFSET($sp)
+        #Return
+        bi $lr
+
+case_zero:
+        #Put 1 in reg 3 for the return value
+        il $3, 1
+	##EPILOGUE##
+        #Restore previous stack frame
+        ai $sp, $sp, FACT_FRAME_SIZE
+        #Return
+        bi $lr
+</code>
+
+
+<p>
+To build the program, we will just use the C compiler:
+</p>
+
+<code type="section">
+spu-gcc -o factorial factorial.s
+</code>
+
+<p>
+Now the Cell does not run SPE programs directly.  It actually requires that the main code be written for the PPE to manage resources.  However, Linux will, if given an SPE-only program, create a skeleton PPE process to manage the SPE program for you.  So you can just run the program as normal:
+</p>
+
+<code type="section">
+./factorial
+</code>
+
+<p>
+If that doesn't work, be sure that the <code type="inline">elfspu</code> paackage is installed appropriately (see <a href="">previous article</a> for instructions).
+</p>
+
+
+<p>
+Don't be taken back by the size of the code - it's mostly comments and declarations.  The factorial function itself only has 16 instructions.
+Let's take a look at what each instruction does.</p>
+
+<p>
+The program starts off with a typical <code type="inline">.data</code> declaration.  In assembly language, the static data and global variables are separated out in memory from the code.  You can switch back and forth between data and code sections, but when the program is assembled it will bring all of each section together into one unit.  <code type="inline">.data</code> switches into the data section, while <code type="inline">.text</code> switches into the code section. 
+</p>
+
+<p>
+The data section holds the value we want to compute the factorial of in a space labelled <code type="inline">number</code>.  Putting a word at the beginning of a line with a colon after it indicates that the address of the following declaration or instruction can be referred to throughout the program by that label.  So, throughout the code, anywhere where we have <code type="inline">number</code> it will refer to the address of the next value.  <code type="inline">.long</code> is a declaration which stores a value in a 32-bit space.  In this case, we are storing the number 4.
+</p>
+
+<p>
+Note, however, that before we define <code type="inline">number</code>, we align it using <code type="inline">.align 4</code>.  The <code type="inline">.align</code> operation tells the assembler to align the next instruction or declaration at a certain boundary.  <code type="inline">.align 4</code> aligns the next memory location to a 16-byte (2^4) boundary.  This is critical, as the SPU can only load exactly 16 bytes at a time, aligned to exactly a 16-byte boundary.  If it is given an address to load from that is not at a 16-byte boundary, it simply zeroes out the last four bits of the address before loading to in order to do an aligned load.  Therefore, if our value is not properly aligned, it could be loaded <i>anywhere</i> within the register - probably somewhere in the register that we don't expect.  By aligning it to a 16-byte boundary, we know that it will load into the first four bytes of the register.  After that is another alignment statement for the beginning of the string that gives our output.  The <code type="inline">.ascii</code> declaration tells the assembler that what follows is an ASCII string, which is explicitly terminated with a <code type="inline">\0</code>.
+</p>
+
+<p>
+After this, we define several constants for our stack frames.  Remember that when a program makes a function call (especially for recursive ones), it has to store its return address and local variables on the stack.  In C and other high-level languages, the language itself manages the run-time stack.  In assembly language, this is handled explicitly by the programmer.  The stack is set up for us by the operating system when the program starts.  The stack starts at the high-numbered addresses of this region, and grows toward the low-numbered addresses as stack frames are added.  We have to allocate space for each stack, and move the appropriate values to that space.  In this program we will have two stack frame sizes - one for <code type="inline">main</code> and one for <code type="inline">factorial</code>.  Each stack frame holds a pointer to the previous stack frame (called the <i>back chain pointer</i>), as well as a space for return addresses for when it calls other functions.  While each of these is only a word size (4-byte) value, they are each aligned to 16 bytes for easy loading and storing (remember, the SPUs only load from 16-byte-aligned addresses).  The remaining space is used for saving registers and storing local variables.  <code type="inline">main</code>'s stack will be the minimum of 32 bytes, while <code type="inline">factorial</code>'s will be 48, because <code type="inline">factorial</code> has a local variable to store.  In order to name these quantities within the program and make the code more readable, we give these values symbols through the <code type="inline">.equ</code> operation.  This tells the assembler to equate the given symbol with the given value.  The stack frame sizes are assigned to the symbols <code type="inline">MAIN_FRAME_SIZE</code> and <code type="inline">FACT_FRAME_SIZE</code>, respectively.  <code type="inline">LR_OFFSET</code> is the offset into the stack frame of the return address.  <code type="inline">LCL_NUM_VALUE</code> is the stack offset of the local variable <code type="inline">num</code>.  These will all be used to make access to stack frame offsets much clearer in the main body of code.
+</p>
+
+<p>
+In the code section, we define a function's address the same way we defined addresses for global variables above - just put their name followed by a colon.  This indicates that the function's address will be the address of the next instruction.  We use <code type="inline">.type</code> to tell the linker that this value should be used as a function, and we use <code type="inline">.global</code> to tell the linker that this symbol can be referenced outside of the current file when linking.   <code type="inline">main</code> must be declared global, because it is used as the entry point to the program.  Now let's get into the actual assembly instructions themselves.
+</p>
+
+<p>
+We will discuss what the prologue does when we discuss the <code type="inline">factorial</code> function. For right now, just know that it sets up the stack frame.
+</p>
+
+<p>
+The first actual instruction we hit is <code type="inline">lqr $3, number</code>.  This stands for "load quadword relative".  The "quadword" part is a bit redundant, as only quadword loads and stores are allowed on the SPU.  This loads the value in the address <code type="inline">number</code> (encoded as a relative address from the current instruction) into register 3.  Unlike PPE assembly language, in SPE assembly language registers are always prefixed with a dollar sign.  This makes it much easier to spot registers in the code.  Since all registers on the SPU are 16-bytes long, this will load a full 16-byte quadword into the register, even though we are only really concerned with the first 4 bytes of it.
+</p>
+
+<p>
+What we want to do with this value in register 3 is to calculate the factorial of it.  Therefore, we need to pass it as the first (and only) parameter to the <code type="inline">factorial</code> function.  THE SPU ABI, like the PPU ABI, uses registers to pass values to functions.  Register 3 should hold the first parameter, register 4 should hold the second one, etc.  Therefore, the value we loaded into register three is already in the perfect spot for the function.  Although registers can hold multiple values (in this case, four 32-bit values), when passing parameters to a function each parameter value is passed in its own register.
+</p>
+
+<p>
+This brings up the point of what are registers used for?  If you've never programmed assembly language before, registers are the temporary storage that processors use for computing values.  Since the SPU has 128 registers, it can keep a lot of temporary and intermediate values around without having to load and store back into memory like other architectures.  This makes for both easier programming and faster execution.  While the SPU makes no distinction in how registers are used, the ABI standard does.  Here is a table of how the ABI uses each register within the SPU:
+</p>
+
+<heading refname="" type="minor" toc="no">Register Usage in the SPU ABI</heading>
+<table>
+<tr><th>Register Range</th><th>Type</th><th>Purpose</th></tr>
+<tr><td>0</td><td>Dedicated</td><td>Link Register</td></tr>
+<tr><td>1</td><td>Dedicated</td><td>Stack Pointer</td></tr>
+<tr><td>2</td><td>Volatile</td><td>Environment Pointer (for languages that need one)</td></tr>
+<tr><td>3-79</td><td>Volatile</td><td>Function arguments, return values, and general usage.</td></tr>
+<tr><td>80-127</td><td>Non-volatile</td><td>Used for local variables.  Must be preserved across function calls.</td></tr>
+</table>
+
+<p>
+We will get to the link register shortly, but basically it is used for temporary storage of return addresses.  The stack pointer tells us where the end of our current stack frame is.  The environment pointer is not used in most languages.  All of the registers marked <i>volatile</i> can be freely changed within a function.  However, that means that when a function makes a function call, it should expect that all of the values in volatile registers will be overwritten.  All of the registers marked <i>non-volatile</i> must have their previous value saved before use, and restored before returning from a function call.  This allows you to have a set of registers which can be counted on to be preserved across function calls.  However, they take more work to use, since your code must save and restore their previous values.  The return value comes back in register 3.
+</p>
+
+<p>
+As we said, since we want the factorial of the number 4, it goes into register 3, the register used for the first parameter.  We then branch to the function using <code type="inline">brsl $lr, factorial</code>.  <code type="inline">brsl</code> stands for "branch relative and set link".  This branches to the function entry point and sets the <i>link register</i> (LR) to the next instruction for the return address.  Note that when we do <code type="inline">brsl</code> that we specify <code type="inline">$lr</code> for the register.  This is an alias for <code type="inline">$0</code>.  Notice also that we had to specify the link register explicitly.  As we mentioned, the SPU has not special registers.  The link register is only special by convention - the assembly language allows us to set the link in <i>any</i> register we choose.  However, for most purposes, this will be <code type="inline">$lr</code>.
+</p>
+
+<p>
+After computing the factorial, we now want to print it out using <code type="inline">printf</code>.  The first parameter to <code type="inline">printf</code> is the address of an output string.  Therefore, we first need to move the result from register 3 to register 5 (register 4 will hold the original number).  Then we need to move the address <code type="inline">output</code> into register 3.  <code type="inline">ila</code> is a special load instruction that loads static addresses, in this case loading the address of the output string into register 3.  It loads 18-bit unsigned values, which is the perfect size for local store addresses on the PS3.  Finally, the original number is loaded into register 4.  The <code type="inline">printf</code> function is called using <code type="inline">brsl $lr, printf</code>.  Please note, however, that <code type="inline">printf</code> <i>is not executed on the SPE</i> because the SPE is incapable of input and output.  This actually goes to a stub function which stops the SPE processor, signals the PPE, and the PPE actually performs the function call.  After that, control is returned to the SPE.
+</p>
+
+<p>
+The epilogue will be discussed in the discussion of the <code type="inline">factorial</code> code, but it basically just takes down the stack frame and returns to the previous function.
+</p>
+
+<p>
+Before we move into a discussion of the <code type="inline">factorial</code> function, let's take a look at the layout of a stack frame more closely.  Here is how the stack is supposed to be laid out according to the ABI:
+</p>
+
+<table>
+<tr><th>Contains</th><th>Size</th><th>Beginning Stack Offset</th></tr>
+<tr><td>Register Save Area</td><td>Varies (multiple of 16 bytes)</td><td>Varies</td></tr>
+<tr><td>Local Variable Space</td><td>Varies (multiple of 16 bytes)</td><td>Varies</td></tr>
+<tr><td>Parameter List</td><td>Varies (multiple of 16 bytes)</td><td>32($sp)</td></tr>
+<tr><td>Link Register Save Area</td><td>16 bytes</td><td>16($sp)</td></tr>
+<tr><td>Back Chain Pointer</td><td>16 bytes</td><td>0($sp)</td></tr>
+</table>
+
+<p>
+The back chain pointer points to the back chain pointer of the previous stack frame.  The link register save area holds the link register contents of the function being called, rather than for the current function.  The parameter list is for parameters that this function sends to other function calls, not for its own parameters.  However, unlike the PPE, this is only used if the number of parameters is greater than the number of registers available for parameters (not a very likely scenario).  The local variable space is used as a general storage area for the function, and the register save area is used to save the values of non-volatile registers that the function uses.
+</p>
+
+<p>
+So, in our function, we are using the back chain pointer, the link register save area, and one local variable.  That gives us a frame size of 16 * 3 = 48 bytes.  As we mentioned previously, <code type="inline">LR_OFFSET</code> is the offset from the end of the stack to the link register save area.  <code type="inline">LCL_NUM_VALUE</code> is the offset from the end of the stack to our local variable <code type="inline">num</code>.
+</p>
+
+<p>
+The <i>prologue</i> sets up the stack frame for the function.  In the prologue, the first thing we do is to save the link register.  Since we have not yet defined our own stack frame, the offset is from the end of the calling function's stack frame.  Remember that the link register is stored in the calling function's stack frame, not the function's own stack frame.  Therefore, it makes most sense to save it before reserving the stack space.  This is done using what is called a D-Form store (D-Form is an instruction format).  For more information on common instruction formats for loading and storing, see <a href="http://www-128.ibm.com/developerworks/library/l-powasm2.html">this article on PowerPC instruction formats</a> (the SPU formats follow the PPU formats fairly closely).  The code for the store instruction is <code type="inline">stqd $lr, LR_OFFSET($sp)</code>.  <code type="inline">stqd</code> stands for "store quadword D-Form".  D-Form instructions take a register as the first operand, which is the register to be stored or loaded into, and a combination of a constant and a register as the second operand.  The constant gets added to the register to compute the address to use for loading or storing.  The other popular formats are the X-Form, which takes two registers which are added together, or the A-Form, which can hold a constant or a constant relative offset address.  So in this instruction, <code type="inline">$sp</code> is the stack pointer (it's an alias for <code type="inline">$1</code>).  The expression <code type="inline">LR_OFFSET($sp)</code> calculates the value of <code type="inline">LR_OFFSET</code> plus <code type="inline">$sp</code> and uses it as the destination address.  So this instruction stores the link register (which holds the return address) into the proper location in the calling function's stack frame.
+</p>
+
+<p>  
+Next, the current stack frame pointer is stored as the back pointer for the next stack frame, even though we haven't established the stack frame yet (this is done through negative offsets).  The SPU does not have an atomic store/update instruction like the PPU, so in order to make sure that the back pointers are always consistent, storing the back pointer must be done <i>before</i> the stack pointer is moved.  Finally, the stack pointer is moved to reserve all the needed stack space using the instruction <code type="inline">ai $sp, $sp, -FRAME_SIZE</code>.  <code type="inline">ai</code> stands for "add immediate", and it adds an immediate-mode value to a register and stores it back into a register.  It adds together the register in the second operand with the constant in the third operand, and stores the result in the register specified in the first operand.  Most instructions follow a similar format, with the register that holds the result specified in the first operand.
+</p>
+
+<p>
+The "add immediate" instruction, it should be noted, is a vector operation.  Remember that the SPU registers are 128 bits wide, but our value is only 32 bits long.  The register is treated logically as multiple values, which are operated on all-at-once.  The "add immediate" instruction actually treats the register as four separate 32-bit values, each of which have <code type="inline">-FRAME_SIZE</code> added to them, and then they are all stored back into the destination register.  The preferred value size on the SPU is a 32 bit word, but others are supported, including bytes, halfwords, and doublewords.  If the size of the operand is not specified in the instruction, that means either that the size doesn't matter (as in logical instructions, for instance) or that it is using a 32-bit value size.  Bytes are indicated by including the letter <code type="inline">b</code> in the instruction, halfwords have an <code type="inline">h</code>, and doublewords have a <code type="inline">d</code>, though doublewords are usually only used in floating-point instructions (most often a <code type="inline">d</code> in an instruction refers to the D-Form of addressing, not a doubleword).  But in our case we only care about the first word of the register.  The other values simply do not matter in the ABI.
+</p>
+
+<p>
+Next, we will copy the first parameter to a local variable with <code type="inline">stqd $3, LCL_NUM_VALUE($sp)</code>.  We need to do this because our parameter will get clobbered on the recursive function call, and we will need access to it afterwards.
+</p>
+
+<p>
+Next, we will do an immediate-mode compare of register 3 with the number 0 and store the result in register 4 with <code type="inline">ceqi $4, $3, 0</code>.  Note that with the PPU (and most processors for that matter), there is a special-purpose register to hold condition results.  However, with the SPU, the results are stored in a general-purpose register - register 4 in this case.  Remember, this is a vector processor.  So we are not actually comparing register 3 with the number 0.  Instead, we are comparing each word of register 3 with the number 0.  So we actually have four answers, even though we only care about one of them.  The result is stored in the following way: if the condition for the word is true, then all of the bits on the destination word will be set; if the condition for the word is false, then all of the bits on the destination word will be unset.  So for this instruction there will be four results, with each one being either all ones or all zeroes, depending on the results of the comparison.
+</p>
+
+<p>
+The next instruction is <code type="inline">brnz $4, case_zero</code>.  <code type="inline">brnz</code> stands for "branch relative if not zero".  Remember, register 4 is the result of the previous comparison, so this is checking the previous compare result for zero or not-zero.  The result register will be non-zero (i.e., true, all bits set to one) if the previous test for zero was true.  Note that the previous two instructions could have been conflated into one instruction (<code type="inline">brz $3, case_zero</code>) since we were just testing for zero, but I separated them out into two instructions so that you can better see how compares and branches work in the general case.
+</p>
+
+<p>
+What happens if some of the comparisons have a result of true and others false?  Since we are dealing with four 32-bit values rather than one 128-bit value, we could have different results for the different values.  So if the results are different do we branch or do we not?  It turns out that several SPU instructions deal with only one of the register's values.  In these cases, the value that is used is the one in the register's <i>preferred slot</i>.  For 64-bit values it is the first half of the register, for 32-bit values the preferred slot is the first word of the register; for 16-bit values the preferred slot is the second halfword of the register; and for 8-bit values the preferred slot is the fourth byte of the register.  Basically, the first word is the preferred word, and then the other alignments are on the least-significant byte or halfword of that word.  When doing conditional branching, passing values to functions, returning a value from a function, and several other scenarios, the value in the preferred slot is the one that matters.  In our case, we are to assume that the value passed in the function is in the register's preferred slot.  And, if you look at the alignment of <code type="inline">number</code> in the <code type="inline">.data</code> section, you can see that this will be loaded into the preferred slot.  Therefore, the branch will occur appropriately, as long as the value is in the preferred slot of the register.
+</p>
+
+<p>
+Now let's assume that the number we are working with in register 3 is not zero.  This means that we need to do a recursive step.  The recursive C code is <code type="inline">return num * factorial(num - 1)</code>.  The innermost computation requires us decrementing <code type="inline">num</code> and passing it as a parameter to the next invocation of <code type="inline">factorial</code>.  <code type="inline">num</code> is already in register 3, so we just need to decrement it.  So we will do an immediate-mode add like this: <code type="inline">ai $3, $3, -1</code>.  Now we just need to invoke the next <code type="inline">factorial</code>.  To call a function according to the SPU ABI, all you need to do is put the parameters into registers, and then call <code type="inline">brsl $lr, function_name</code>.  In our case, the first and only parameter is already loaded into register 3.  So, we issue a <code type="inline">brsl $lr, factorial</code>.  As we mentioned before, <code type="inline">brsl</code> stands for "branch relative set link".  The destination address is encoded as a relative address, the return address will be stored in the preferred slot of the specified register, and control will go to the destination address, which in this case is back to the beginning of the <code type="inline">factorial</code> function.
+</p>
+<p>
+When control comes back to this point, the factorial result should be in register 3.  Now we want to multiply this result by the current value under consideration.  Therefore, we have to load it back in because it was clobbered in the function call.  <code type="inline">lqd</code> stands for "load quadword D-Form".  The first operand is the destination register and the second is the D-Form address to load.  So <code type="inline">lqd $5, LCL_NUM_VALUE($sp)</code> will pull read the value that we saved on the stack earlier into register 5.
+</p>
+<p>
+Now we need to multiply register 3 and register 5.  This is done with the <code type="inline">mpyu</code> instruction (multiply unsigned).  <code type="inline">mpyu$3, $3, $5</code> multiplies register 3 with register 5 and stores the result in the first register listed, register 3.  Now, the integer multiply instructions on the SPU are somewhat problematic, especially signed multiplication (using the <code type="inline">mpy</code> instruction).  The problem is that the result of a multiply instruction can be twice as long as its operands.  The result of multiplying two 32-bit values is actually a 64-bit value!  If it did this, then the destination register would have to be twice as large as the source register.  In order to combat the problem, multiplication instructions only use the least-significant 16 bits of every thirty-two bit value so that the result will fit in the full 32-bit register.  So, while the multiply treats the source registers as 32 bits wide, it only uses 16 bits of them.  So, your value may be truncated if it is longer than 32 bits.  And, if it is a signed multiply, the sign could even change on truncation!  Therefore, to execute multiply instructions successfully, the source values need to be 16 bits wide, but stored in a 32-bit register (it doesn't matter for the multiplication if it is sign-extended to the rest of the 32 bits or not).  This limits greatly the possible range of our factorial function.  Note that floating-point multiplication doesn't have these issues.
+</p>
+<p>
+So now we have the result, and it is in register 3, which is where it needs to be for the return value.  All that is left to do is to restore the previous stack frame and return.  So we simply need to move the stack pointer by adding the stack frame size to the stack pointer using <code type="inline">ai $sp, $sp, FRAME_SIZE</code>.  We then restore the link register using <code type="inline">lqd $lr, LR_OFFSET($sp)</code>.  Finally, <code type="inline">bi $lr</code> ("branch indirect") branches to the address specified in the link register (the return address), thus returning from the function.
+</p>
+<p>
+The base case (what to do if the function's parameter is zero) is much easier.  The result of factorial(0) is 1, so we simply load in the number one into register 3 using <code type="inline">il $3, 1</code>.  Then we restore the stack frame and return.  However, since the base case doesn't call any other functions, we don't need to load the link register from the stack frame - the value is still there.
+</p>
+<p>
+And that's how the function works!  Just note that writing deeply-recursive functions on the SPE is problematic because there is no stack overflow protection on the SPE, and the local store is small to begin with. 
+</p>
+
+
+<heading refname="" type="major" toc="yes" alttoc="">Non-aligned Loads and Stores</heading>
+
+<p>
+Because the SPU is focused on vector, not scalar processing, it only is able to load and store 16 bytes at a time (the size of a register) from local store locations which are aligned on 16 byte boundaries.  Therefore, you cannot just load a word from, say, memory location 12.  In order to get that word, you would need to load a quadword from memory location 0, and then shift the bits so that the value you want is in the preferred slot.  The original quadword must be loaded, the appropriate value inserted into the right location in the quadword, and then the result stored back.  Because of these issues, it is usually advisable to store all data aligned to 16 bytes.  To load a value which crosses a 16-byte boundary is even more difficult, as you would actually have to load it into two registers, shift them, and then mask and combine them.  Storing such values is even more difficult, so it is best to never use values that cross 16-byte boundaries.
+</p>
+
+<p>
+The loading and storing technique we will discuss, while it will allow us to use data that is not aligned to 16-byte boundaries, will require that the data be <i>naturally aligned</i> in order to prevent it from crossing the 16-byte boundary.  That means that words will be 4-byte aligned, halfwords will be 2-byte aligned, and bytes don't have to be aligned at all.  
+</p>
+
+<p>
+Doing an unaligned load requires two or three instructions, depending on the size of the data.  The reason for this is that if you are loading a single value, you probably want it in the preferred slot of the register.  The first instruction does the load and the second instruction rotates the value so that the requested address is at the beginning of the register.  Then, if the data is smaller than a word, a shift is needed to move it away from the beginning into the preferred slot (if it is a word or a doubleword, the beginning of the register <i>is</i> the preferred slot).  Here is the code for a byte load, which takes an address in the preferred slot of register 3 and uses it to load a byte into the preferred slot of register 4:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 3. Load from Non-Aligned Memory</heading>
+###Load byte unaligned address $3 into preferred slot of register $4###
+
+#Loads from nearest quadword boundary
+lqd $4, 0($3)
+#Rotate value to the beginning of the register
+rotqby $4, $4, $3
+#Rotate value to the preferred slot (-3 for bytes, -2 for halfwords, and nothing for words or doublewords)
+rotqbyi $4, $4, -3
+</code>
+
+
+<p>
+Remember, the <code type="inline">lqd</code> instruction only loads from 16-byte boundaries.  It will therefore ignore the 4 least significant bits during the load, and just load an aligned quadword from memory.  Therefore, for arbitrary addresses, we have no idea where in the loaded quadword the value we wanted is. The <code type="inline">rotqby</code> instruction, "rotate (left) quadword by bytes", uses the address you loaded from to indicate how far to rotate the register.  It only uses the least 4 significant bits of the address in the register (the ones ignored by the load) to determine how far to rotate. This will always be the number of bytes it needs to shift left to move the address specified to the beginning of the register.  Finally, for bytes, the preferred slot is <i>not</i> at the beginning of the register, but three bytes to the right.  So the instruction <code type="inline">rotqbyi</code> we will do a shift using an immediate-mode value to shift by.  Word- and doubleword-sized transfers do not need this last instruction, because their preferred slot is at the beginning of the register anyway.  At the end of this, register 4 has the final value, with the byte shifted into the preferred slot.  
+</p>
+
+<p>
+Storing is more difficult.  Here is the code to store a byte that is in the preferred slot of register $4 into the address specified by register $3:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 4. Store to Non-Aligned Address</heading>
+###Store preferred byte slot $4 into unaligned address $3
+
+#Load the data into a temporary register
+lqd $5, 0($3)
+#Generate the controls for a byte insertion
+cbd $6, 0($3)
+#Shuffle the data in
+shufb $7, $4, $5, $6
+#Store it back
+stqd $7, 0($3)
+</code>
+
+
+<p>
+To understand this cryptic-looking sequence, we need to again keep in mind that the SPU only does loads and stores a quadword at a time, on quadword-aligned addresses.  Therefore, if we want to store only one byte, if we tried to do it directly on an unaligned address, it would both go into the wrong location and clobber the remaining bytes in the quadword.  To avoid this, we need to first load the quadword from memory, insert the value into the appropriate byte in the quadword, and then store it back.  The hard part is inserting it into the proper location based only on the address.  Thankfully, there are two instructions to help out, <code type="inline">cbd</code> ("generate control for byte insertion") and <code type="inline">shufb</code> ("shuffle bytes").  The <code type="inline">cbd</code> instruction takes an address, and generates a control word that can be used by <code type="inline">shufb</code> to insert a byte at the proper location in the quadword for that address.  <code type="inline">cbd $6, 0($3)</code> uses the address in register 3 to generate the control quadword, and then stores it in register 6.  The instruction <code type="inline">shufb $7, $4, $5, $6</code> uses the control quadword in register 6 to generate a new value into register 7 which consists of the original quadword that was in memory (now in register 5) and a byte from register 4 in the preferred slot, and stores the result in register 7.  Once the byte is shuffled in, the value is stored back into memory.
+</p>
+
+<p>
+To illustrate the technique, we're going to write a function that takes the address of an ASCII character, loads it, converts it to uppercase, and stores it back.  We are going to put the function <code type="inline">convert_to_upper</code> in a separate file than the <code type="inline">main</code> function so that we can reuse it in another program later on as well. Here is the code for the <code type="inline">main</code> function (save it as <code type="inline">convert_main.s</code>):
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 5. Uppercase Conversion Program Start</heading>
+.data
+
+string_start:
+.ascii "We will convert the following letter, "
+letter_to_convert:
+.ascii "q"
+remaining:
+.ascii ", to uppercase\n\0"
+
+.text
+.global main
+.type main, @function
+
+main:
+	.equ MAIN_FRAME_SIZE, 32
+	.equ LR_OFFSET, 16
+	#PROLOGUE
+	stqd $lr, LR_OFFSET($sp)
+	stqd $sp, -MAIN_FRAME_SIZE($sp)
+	ai $sp, $sp, -MAIN_FRAME_SIZE
+
+	#MAIN FUNCTION
+	ila $3, letter_to_convert
+	brsl $lr, convert_to_upper
+	ila $3, string_start
+	brsl $lr, printf
+
+	#EPILOGUE
+	ai $sp, $sp, MAIN_FRAME_SIZE
+	lqd $lr, LR_OFFSET($sp)
+	bi $lr
+</code>
+
+
+<p>
+Now enter the function that actually does the uppercase conversion (enter as <code type="inline">convert_to_upper.s</code>):
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 6. Function to Convert to Uppercase</heading>
+.text
+.global convert_to_upper
+.type convert_to_upper, @function
+convert_to_upper:
+	#Register usage
+	# $3 - parameter 1 -- address of byte to be converted
+	# $4 - byte value to be converted
+	# $5 - $4 greater than 'a' - 1?
+	# $6 - $4 greater than 'z'?
+	# $7 - $4 less than or equal to 'z'?
+	# $8 - $4 between 'a' and 'z' (inclusive)?
+	# $9 through $12 - temporary storage for final store
+	# $13 - conversion factor
+
+	#address of letter stored in unaligned address in $3
+	#UNALIGNED LOAD
+	lqd $4, 0($3)
+	rotqby $4, $4, $3
+	rotqbyi $4, $4, -3
+
+	#IS IN RANGE 'a'-'z'?
+	cgtbi $5, $4, 'a' - 1
+	cgtbi $6, $4, 'z'
+	nand $7, $6, $6
+	and $8, $5, $7
+	#Mask out irrelevant bits
+	andi $8, $8, 255
+	#Skip uppercase conversion and store if $4 is not lowercase (based on $8)
+	brz $8, end_convert
+
+is_lowercase:
+	#Perform Conversion
+	il $13, 'a' - 'A'
+	absdb $4, $4, $13
+
+	#Unaligned Store
+	lqd $9, 0($3)
+	cbd $10, 0($3)
+	shufb $11, $4, $9, $10
+	stqd $11, 0($3)
+
+end_convert:
+	#no stack frame, no return value, just return
+	bi $lr
+</code>
+
+
+<p>
+To compile and run, perform the following commands:
+</p>
+
+<code type="section">
+spu-gcc convert_main.s convert_to_upper.s -o convert
+./convert
+</code>
+
+<p>
+The <code type="inline">main</code> function doesn't function too different than from before, so we won't discuss it here.  Note, however, that it is passing the <i>address</i> of the letter to <code type="inline">convert_to_upper</code>, not the letter itself.
+</p>
+
+<p>
+The <code type="inline">convert_to_upper</code> function takes the address of an arbitrary character, converts it to upper-case, and then stores it back and returns nothing.  It never calls another function, so it doesn't need a stack frame.
+</p>
+
+<p>
+The first thing the function does is an unaligned load as described previously into register 4.   It then checks to see if the byte is in the range <code type="inline">a</code> through <code type="inline">z</code>.  It does that by comparing if it is greater than <code type="inline">'a' - 1</code>, and then seeing if it is greater than <code type="inline">'z'</code>.  We did not do a "less than" comparison, <i>because they aren't available on the SPU!</i>  SPUs only have comparisons for "greater than" and "equal to".  Therefore, if we want to do a "less than or equal to" comparison, we must do a "greater than" comparison and then do a "not" on it, which is performed using the <code type="inline">nand</code> instruction with both source arguments being the same register.  We then combine the comparisons using the <code type="inline">and</code> instruction (note that we could have combined all the logical instructions into one with an <code type="inline">xor</code>, but the code would have been much less clear).  Finally, because the branch instructions only operate on halfword or word values, we have to mask out the non-relevant portions of the register (we didn't have to do that in the factorial example because we were dealing with a full word).  
+</p>
+
+<p>
+If the bits in the preferred slot of register 8 are all set to false, we skip to the end of the function.  If they are true, we perform the conversion.  The only byte-oriented arithmetic function on the SPU is <code type="inline">absdb</code>, "absolute difference of bytes," which gives the absolute value of the difference between two operands.  We use that, combined with the difference between the lowercase and uppercase values, to perform the conversion.  Finally, we perform an unaligned store.  Since we did not call any functions or use any local storage, we did not need a stack frame at all, so we can now just exit through the link register.
+</p>
+
+
+
+<heading refname="" type="major" toc="yes" alttoc="">Communication with the PPE</heading>
+
+<p>
+So far we have concentrated on SPE-only programs.  Now we will look into PPE-controlled programs, and for that, we need to know how to get the PPE and the SPE to communicate.
+</p>
+
+<heading refname="" type="minor" toc="no" alttoc="">Channels and the MFC</heading>
+
+<p>
+Remember that SPEs have a memory that is separate from the processor's main memory, called the <i>local store</i>. The SPE cannot read main memory directly, but instead must import and export data between the local store and main memory using DMA commands to a unit called the <i>memory flow controller</i>, or MFC.  The local store address space is limitted to 32 bits, but it is usually much smaller (in the Playstation 3, for instance, it is only 18 bits).  The reason for this is so that memory accesses by SPE code can be deterministic.  Main memory can get swapped out, moved around, cached, uncached, or memory mapped.  Therefore, the amount of time required for any particular memory access is completely unknown (if the memory is swapped out, who knows how long it will take).  By separating out the SPE memory into a local store, the SPE can have a deterministic access time for any memory it accesses, and schedule the MFC to asynchronously move data in and out of main memory as needed.  Addresses within an SPEs local store are called <i>local store addresses</i> (LSAs), while addresses within the main memory are called <i>effective addresses</i> (EAs).  This will be important as we learn how to use the memory flow controller's DMA facilities.
+</p>
+
+<p>
+SPEs communicate with the outside world by using <i>channels</i>.  A channel is a 32-bit area which can be written to or read from (but not both - they are unidirectional) using special instructions.  A channel can also have a depth, or <i>channel count</i>.  The channel count is amount of data waiting to be read (for read channels), or the amount of data which can still be written (for write channels).  Channels are used for all SPE input and output.  They are used for issuing DMA commands to the memory flow controller, handling SPE events, and reading and writing messages to and from the PPE.  The next program we are going to do will utilize the MFC and the channel interface to do character conversions on data specified by the PPE.  
+</p>
+
+
+
+<heading refname="" type="minor" toc="no" alttoc="">Creating and Running SPE Tasks</heading>
+
+<p>
+So far, our <code type="inline">main</code> function has not been using any parameters.  However, when it is run from a PPE program, it actually receives three 64-bit parameters - the SPE task identifier in register 3, a pointer to application parameters in register 4, and a pointer to runtime environment information in register 5.  The contents of the areas pointed to by application and environment pointers are actually user-defined.  However, remember that they point to memory <i>in the main storage of the application</i> (an effective address), not to the SPE's local store.  Therefore, they cannot be accessed directly, but must be moved in via DMA.
+</p>
+
+<p>
+SPE tasks are created with the function <code type="inline">speid_t spe_create_thread(spe_gid_t spe_gid, spe_program_handle_t *spe_program_handle, void *argp, void *envp, unsigned long mask, int flags)</code>.  The parameters work as follows:
+</p>
+
+<dl>
+
+<dt>spe_gid</dt><dd><p>This is the SPE thread group to assign this task to.  It can simply be set to zero.</p></dd>
+
+<dt>spe_program_handle</dt><dd><p>This is a pointer to a structure which holds the data about the SPE program itself.  This data is normally defined either automatically by embedding an SPU application within a PPU executable (this will be shown later), by using <code type="inline">dlopen()</code>/<code type="inline">dlsym()</code> on a library containing an SPU application, or by using <code type="inline">spe_open_image()</code> to directly load an SPU application.</p></dd>
+
+<dt>argp</dt><dd><p>This is a pointer to application-specific data for program initialization. Set to null if it is not going to be used.</p></dd>
+
+<dt>envp</dt><dd><p>This is a pointer to environment data for the program.  Set to null if it is not going to be used.</p></dd>
+
+<dt>mask</dt><dd><p>This is the processor affinity mask.  Set it to -1 to assign  the process to any available SPE.  Otherwise, it contains a bitmask for each available processor.  1 means that the processor should be used, 0 means that it should not.  Most applications set this to -1.</p></dd>
+
+<dt>flags</dt><dd><p>This is a set of bit flags which modify how the SPE is set up.  These are all outside the scope of this article.</p></dd>
+</dl>
+
+
+
+<heading refname="" type="minor" toc="no" alttoc="">An PPE/SPE Program Using DMA</heading>
+
+<p>
+As an example of DMA communication, we will write a program where the PPE takes a string, and invokes an SPE program which copies over the string, converts it to uppercase, and copies it back into main storage.  All of the data transfers will use the MFC's DMA facilities, controlled through SPE channels. 
+</p>
+
+<p>
+The main SPE program will receive an effective address pointer to a struct containing the size and pointer of a string in main memory.  It will then copy it into its buffer, perform the conversion, and copy it back.  Here is the SPE code (enter as <code type="inline">convert_dma_main.s</code>):
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 7. SPU Code to Perform Uppercase Conversion for PPU Program</heading>
+.data
+
+.align 4
+conversion_info:
+conversion_length:
+	.octa 0
+conversion_data:
+	.octa 0
+.equ CONVERSION_STRUCT_SIZE, 32
+
+.section .bss #Uninitialized Data Section
+.align 4
+.lcomm conversion_buffer, 16384
+
+.text
+.global main
+.type main, @function
+
+#MFC Constants
+.equ MFC_GET_CMD, 0x40
+.equ MFC_PUT_CMD, 0x20
+
+#Stack Frame Constants
+.equ MAIN_FRAME_SIZE, 80
+.equ MAIN_REG_SAVE_OFFSET, 32
+.equ LR_OFFSET, 16
+
+main:
+	#Prologue
+	stqd $lr, LR_OFFSET($sp)
+	stqd $sp, -MAIN_FRAME_SIZE($sp)
+	ai $sp, $sp, -MAIN_FRAME_SIZE
+
+	#Save Registers
+	#Save register $127 (will be used for current index)
+	stqd $127, MAIN_REG_SAVE_OFFSET($sp)
+	#Save register $126 (will be used for base pointer)
+	stqd $126, MAIN_REG_SAVE_OFFSET+16($sp)
+	#Save register $125 (will be used for final size)
+	stqd $125, MAIN_REG_SAVE_OFFSET+24($sp)
+
+	##COPY IN CONVERSION INFORMATION##
+	ila $3, conversion_info         #Local Store Address
+	#register 4 already has address #64-bit Effective Address
+	il $5, CONVERSION_STRUCT_SIZE   #Transfer size
+	il $6, 0                        #DMA Tag
+	il $7, MFC_GET_CMD              #DMA Command
+	brsl $lr, perform_dma
+
+	#Wait for DMA to complete
+	il $3, 0
+	brsl $lr, wait_for_dma_completion
+
+	##COPY STRING IN TO BUFFER##
+	#Load buffer data pointer 
+	ila $3, conversion_buffer #Local Store
+	lqr $4, conversion_data   #64-bit Effective Address
+	lqr $5, conversion_length #SIZE
+	il $6, 0                  #DMA Tag
+	il $7, MFC_GET_CMD        #DMA Command
+	brsl $lr, perform_dma
+
+	#Wait for DMA to complete
+	il $3, 0
+	brsl $lr, wait_for_dma_completion
+
+	#LOOP THROUGH BUFFER
+	#Load bufer size
+	lqr $125, conversion_length
+	#Load buffer pointer
+	ila $126, conversion_buffer
+	#Load buffer index
+	il $127, 0
+loop:
+	ceq $7, $125, $127
+	brnz $7, loop_end
+	
+	#Compute address for function parameter
+	a $3, $127, $126
+	#Next index
+	ai $127, $127, 1
+
+	#Run function
+	brsl $lr, convert_to_upper
+
+	#Repeat loop
+	br loop
+
+loop_end:
+        #Copy data back
+        ila $3, conversion_buffer   #Local Store Address
+        lqr $4, conversion_data     #64-bit effective address
+        lqr $5, conversion_length   #Size
+        il $6, 0                    #DMA Tag
+        il $7, MFC_PUT_CMD          #DMA Command
+	brsl $lr, perform_dma
+
+        #Wait for DMA to complete
+	il $3, 0
+	brsl $lr, wait_for_dma_completion
+
+	#Return Value
+	il $3, 0
+
+        #Epilogue
+        ai $sp, $sp, MAIN_FRAME_SIZE
+        lqd $lr, LR_OFFSET($sp)
+        bi $lr
+</code>
+
+
+<p>
+This code relies on some utility functions for handling DMA commands.  Enter those functions as <code type="inline">dma_utils.s</code>:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 8. DMA Transferring Utilities</heading>
+##UTILITY FUNCTION TO PERFORM DMA OPS##
+#Parameters - Local Store Address, 64-bit Effective Address, Transfer Size, DMA Tag, DMA Command
+.global perform_dma
+.type perform_dma, @function
+perform_dma:
+	shlqbyi $9, $4, 4  #Get the low-order 32-bits of the address
+	wrch $MFC_LSA, $3
+	wrch $MFC_EAH, $4
+	wrch $MFC_EAL, $9
+	wrch $MFC_Size, $5
+	wrch $MFC_TagID, $6
+	wrch $MFC_Cmd, $7
+	bi $lr
+
+.global wait_for_dma_completion
+.type wait_for_dma_completion, @function
+wait_for_dma_completion:
+	#We receive a tag in register 3 - convert to a tag mask
+	il $4, 1
+	shl $4, $4, $3
+	wrch $MFC_WrTagMask, $4
+	#Tell the DMA that we only want it to inform us on DMA completion
+	il $5, 2
+	wrch $MFC_WrTagUpdate, $5
+	#Wait for DMA Completion, and store the result in the return value
+	rdch $3, $MFC_RdTagStat
+	#Return
+	bi $lr
+</code>
+
+
+<p>
+Now, not only do we need to compile this program, we need to prepare it for embedding in a PPE application.  Assuming you still have the <code type="inline">convert_to_upper.s</code> from your last program in the current directory, here are the commands to compile the code and prepare it for embedding:
+</p>
+
+<code type="section">
+spu-gcc convert_dma_main.s dma_utils.s convert_to_upper.s -o spe_convert
+embedspu -m64 convert_to_upper_handle spe_convert spe_convert_csf.o
+</code>
+
+<p>
+This produces what is called a <i>CESOF Linkable</i>, which allows an object file for the SPE to be embedded in a PPE application and loaded as needed.
+</p>
+
+<p>
+Here is the PPU code to make use of the SPU code (enter as <code type="inline">ppu_dma_main.c</code>):
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 9. PPU Code to Utilize SPU Application</heading>
+#include &lt;stdio.h&gt;
+#include &lt;libspe.h&gt;
+#include &lt;errno.h&gt;
+#include &lt;string.h&gt;
+
+/* embedspu actually defines this in the generated object file, we only need an extern reference here */
+extern spe_program_handle_t convert_to_upper_handle;
+
+/* This is the parameter structure that our SPE code expects */
+/* Note the alignment on all of the data that will be passed to the SPE is 16-bytes */
+typedef struct {
+	int length __attribute__((aligned(16)));
+	unsigned long long data __attribute__((aligned(16)));
+} conversion_structure;
+
+int main() {
+	int status = 0;
+	/* Pad string to a quadword - there are 12 spaces at the end. */
+	char *tmp_str = "This is the string we want to convert to uppercase.            ";
+	/* Copy it to an aligned boundary */
+	char *str = memalign(16, strlen(tmp_str) + 1);
+	strcpy(str, tmp_str);
+	/* Create conversion structure on an aligned boundary */
+	conversion_structure conversion_info __attribute__((aligned(16)));
+
+	/* Set the data elements in the parameter structure */
+	conversion_info.length = strlen(str) + 1; /* add one for null byte */
+	conversion_info.data = (unsigned long long)str;
+
+	/* Create the thread and check for errors */
+	speid_t spe_id = spe_create_thread(0, &amp;convert_to_upper_handle, &amp;conversion_info, NULL, -1, 0);
+	if(spe_id == 0) {
+		fprintf(stderr, "Unable to create SPE thread: errno=%d\n", errno);
+		return 1;
+	}
+
+	/* Wait for SPE thread completion */
+	spe_wait(spe_id, &amp;status, 0);
+	
+	/* Print out result */
+	printf("The converted string is: %s\n", str);
+
+	return 0;
+}
+</code>
+
+
+<p>
+To build and execute the program, enter the following commands:
+</p>
+
+<code type="section">
+gcc -m64 spe_convert_csf.o ppu_dma_main.c -lspe -o dma_convert
+./dma_convert
+</code>
+
+<p>
+That's quite a bit to swallow, but my goal is to make you competent in all of the basic aspects of SPU programming before we hit the vector processing in the next article.  So if you can hang in there, you'll be on your way to expert SPU programming in no time.  So let's go through what the code is doing.  Let's start with the PPU code, since it's a little easier.
+</p>
+
+<p>
+The first interesting part of the PPU code is the inclusion of the <code type="inline">libspe.h</code> header file, which contains all of the function declarations for running programs on the SPE.  It then references a handle called <code type="inline">convert_to_upper_handle</code>.  This is only an <code type="inline">extern</code> reference, not the declaration itself.  This is because <code type="inline">convert_to_upper_handle</code> is defined in <code type="inline">spe_convert_csf.o</code>.  The name of the variable was set on the command line of the <code type="inline">embedspu</code> command.  That variable is the handle to the program code, which will be used to create our SPE tasks.
+</p>
+
+<p>
+Next, we define the structure that will be used as the parameter to our SPE program.  We need the length of the string and the pointer to the string itself.  These all need to be quadword aligned, so that we can copy it into our main program and use the values with DMA transfers.  Note that the pointer we used is declared an <code type="inline">unsigned long long</code> rather than just a pointer.  This is so that the address transfers is stored the same way whether it is compiled in 32-bit mode or 64-bit mode.  With a pointer, if it were compile in 32-bit mode, the pointer would be aligned differently within the structure.  We also have to use the <code type="inline">memalign</code> function and <code type="inline">strcpy</code> to copy the data into an area of appropriate alignment.  Here's a pointer from long nights of trial and error with this stuff: if you continually are receiving a "bus error", you are probably doing a DMA transfer that is either not 16-byte aligned or is not a multiple of 16 bytes.  
+</p>
+
+<p>
+In the main program, we declare our variables.  Note that all of the declared variables which will be copied using DMA are aligned on quadword boundaries and are multiples of quadwords.  That's because DMA transfers, with a few exceptions for small transfers, <i>must be quadword-aligned in both the source and destination addresses</i> (the program will get even beter performance if both source and destination are 128-<i>byte</i> aligned).  Next, the SPE task is created with <code type="inline">spe_create_thread</code>, passing in our parameter structure.  Now we can just wait for the SPE task to complete using <code type="inline">spe_wait</code>, and then print out the final value.  As you may have guessed, most of the interesting parts of the program are taking place on the SPE, including all of the DMA transfers.  DMA transfers are almost always done by the SPEs rather than by the PPE because they can handle much more data and many more active DMA operations than the PPE.
+</p>
+
+<p>
+Before getting into the details of the main program, let's talk about our DMA utility functions.  The first function is <code type="inline">perform_dma</code>, which, not surprisingly, performs DMA commands.  The Cell BE Handbook defines the sequence of channel operations needed to perform a DMA transfer on pages 450-456.  The first thing the function is doing is converting the 64-bit effective address in register 4 into two 32-bit components - a high- and a low-order component (remember, the channels are only 32-bits wide).  Because channels are written using a register's preferred word-sized slot, the 64-bit address already has the high-order bits in the preferred slot.  Therefore, we just shift the contents to the left by four bytes into a new register to get the low-order bits in the preferred slot.  We then write the local store address, the high-order bits of the effective address, the low-order bits of the effective address, the size of the transfer, the "tag" of the DMA command, and then the command itself to their appropriate channels using the <code type="inline">wrch</code> instruction.  When the command is written, the DMA request is enqueued into the MFC provided it has available slots - ours certainly does as we are not doing any other concurrent DMA requests.  The "tag" is a number which can be assigned to one or many DMA commands.  All DMA commands issued with the same tag are considered a single group, and status updates and sequencing operations apply to the group as a whole.  In this application, we will only have one DMA command active at a time, so all of our operations will use 0 as the DMA tag.  The DMA command should be either <code type="inline">MFC_GET_CMD</code> or <code type="inline">MFC_PUT_CMD</code>.  There are others, but we aren't concerned with them here.  MFC commands are all done from the perspective of the SPE, whether or not it is actually the SPE issuing the command.  So <code type="inline">MFC_GET_CMD</code> moves data from main memory to the local store, and <code type="inline">MFC_PUT_CMD</code> goes the other way. 
+</p>
+
+<p>
+Because DMA commands are asynchronous, it is useful to be able to wait for one to complete.  The function <code type="inline">wait_for_dma_completion</code> does precisely that.  It takes a tag as its only parameter, converts it to a tag mask, requests a DMA status, and then reads the status.  So how does this wait for the DMA operation to complete?  When writing to the <code type="inline">$MFC_WrTagUpdate</code> channel with a value of 2, it causes the <code type="inline">$MFC_RdTagStat</code> to not have a value until the operation is completed.  Thus, when we try to read the channel using <code type="inline">rdch</code>, it will block until the status is available, at which point the transfer will be complete.
+</p>
+
+<p>
+Now let's get into the actual program itself.  The first thing our SPE program does is reserve space for the application's parameter data.  This is also aligned to quadword boundaries (<code type="inline">.align 4</code> in assembly language works the same as <code type="inline">__attribute__((aligned(16)))</code> in C because 2^4 = 16).  <code type="inline">.octa</code> reserves quadword values (the mnemonic is a holdover from 16-bit days).  We then define a constant <code type="inline">CONVERSION_STRUCT_SIZE</code> for the size of the whole structure.
+</p>
+
+<p>
+After this, we go to the <code type="inline">.bss</code> section, which is like the <code type="inline">.data</code> section, except that the executable itself does not contain the values, it just notes how much space should be reserved for them.  This section is for uninitialized data.  <code type="inline">.lcomm conversion_buffer, 16384</code> reserves 16K of space, with the starting address defined in the symbol <code type="inline">conversion_buffer</code>.  It is defined for holding 16K because that is the maximum size of an MFC DMA transfer.  Therefore, if any string is longer than that, the PPE will have to invoke the program multiple times (a better program would simply break up the request into chunks on the SPE side).
+</p>
+
+<p>
+The <code type="inline">main</code> function has the main meat of the program.  It starts by setting up a stack frame.  It then saves 3 non-volatile registers that will be used for the main control of the program.  Next, it performs a DMA transfer to copy in the parameter structure from the PPE.  Remember, the first parameter to the function is the 64-bit address that was passed in from the PPE.  We then use a DMA command to fetch the full structure, and wait for the DMA to complete.  After the transfer, we use the data in that structure to copy the string itself into our buffer in the local store using another DMA transfer, and wait for it to complete.  Note that we used the <code type="inline">ila</code> instruction ("immediate load address") to load the address of the buffer.  The <code type="inline">ila</code> instruction maxes out as 18 bits, which works for the Playstation 3.  However, if a Cell processor has a larger local store size, you would load it instead with the following two instructions:
+</p>
+<code type="section">
+ilhu $3, conversion_buffer@h #load high-order 16 bits of conversion_buffer
+iohu $3, conversion_buffer@l #"or" it with the low-order 16 bits of conversion_buffer
+</code>
+<p>
+Then the target effective address, the length of the string, the DMA tag, and a <code type="inline">MFC_GET_CMD</code> DMA command are all passed to <code type="inline">perform_dma</code>.  The program then waits for the operation to complete.
+</p>
+
+<p>
+At this point, all of the data is loaded in, we just need to convert it.  We then use register 127 as our loop counter and register 126 as our base pointer, and perform <code type="inline">convert_to_upper</code> on each value until we get to the end of the buffer.
+</p>
+
+<p>
+At <code type="inline">loop_end</code>, all of the data is converted, and we need only to copy it back.  We use the same DMA parameters as for the last transfer, but this time it is an <code type="inline">MFC_PUT_CMD</code> command.  Once the DMA is completed, our function is done.  We load register 3 with the return value, and perform the function epilogue to restore the stack frame and return.
+</p>
+
+
+
+
+<heading refname="" type="major" toc="yes" alttoc="">SPE/PPE Communication Using Mailboxes</heading>
+
+<p>
+While DMA transfers are an excellent way of moving bulk data between the SPE and the PPE, another simpler method for smaller transfers which we will briefly discuss is <i>mailboxes</i>.  For the SPE, it is simply a set of channels (a read channel and a write channel) to write 32-bit values to the PPE.  
+</p>
+
+<p>
+To demonstrate the concept, we will write a very simple SPE server which waits for an unsigned integer number in the mailbox, and then writes back the square of that number.  Here is the code (enter as <code type="inline">square_server.s</code>:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 10. SPU Squaring Server</heading>
+.text
+.global main
+.type main, @function
+main:
+	#Read the value from the inbox (stalls if no value until one is available)
+	rdch $3, $SPU_RdInMbox 
+	#Square the value
+	mpyu $3, $3, $3
+	#Write the value back
+	wrch $SPU_WrOutMbox, $3
+	#Go back and do it again
+	br main
+</code>
+
+
+<p>
+That's all!  This will just sit around and wait for requests and process them.  It simply quits when the parent program quits.  And, if there is no value available in the inbox, the <code type="inline">rdch</code> instruction simply stalls until there is one.
+</p>
+
+<p>
+The PPE side isn't much harder (enter as <code type="inline">square_client.c</code>):
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 11. PPE Squaring Client</heading>
+#include &lt;libspe.h&gt;
+#include &lt;stdio.h&gt;
+
+extern spe_program_handle_t square_server_handle;
+
+int main() {
+	int status = 0;
+
+	/* Create SPE thread */
+	speid_t spe_id = spe_create_thread(0, &amp;square_server_handle, NULL, NULL, -1, 0);	
+	if(spe_id == 0) {
+		fprintf(stderr, "Unable to create SPE thread!\n");
+		return 1;
+	}
+
+	/* Request a square */
+	spe_write_in_mbox(spe_id, 4);
+	/* Wait for result to be available */
+	while(!spe_stat_out_mbox(spe_id)) {} 
+	/* Read and display result */
+	printf("The square of 4 is %d\n", spe_read_out_mbox(spe_id));
+
+	/* Do it again */
+	spe_write_in_mbox(spe_id, 10);
+	while(!spe_stat_out_mbox(spe_id)) {} 
+	printf("The square of 10 is %d\n", spe_read_out_mbox(spe_id));
+
+	return 0;
+}
+</code>
+
+
+<p>
+To compile and run this program, issue the following commands:
+</p>
+
+<code type="section">
+spu-gcc square_server.s -o square_server
+embedspu -m64 square_server_handle square_server square_server_csf.o
+gcc -m64 square_client.c square_server_csf.o -lspe -o square
+./square
+</code>
+
+<p>
+The mailboxes, even for the PPE, are named according to the perspective of the SPE.  So you write to the inbox and read from the outbox if you are the PPE.  Unlike the SPE, the PPE does not stall and wait for a value when it reads or writes.  Instead, the program must use <code type="inline">spe_stat_out_mbox</code> to wait for a value, and <code type="inline">spe_stat_in_mbox</code> to see if there are slots left for writing to the mailbox.  We don't use the latter as we only have one value in play at a time.
+</p>
+
+<p>
+The real power of mailboxes comes when a program combines the mailbox and the DMA approach.  For example, an SPE task can be created which listens for buffer addresses on its mailbox, and then uses that address to pull in all of the data to be processed via DMA.
+</p>
+
+
+
+<heading refname="" type="major" toc="yes" alttoc="">Conclusion</heading>
+
+<p>
+In this article, we tried to cover the main concepts of assembly language programming on the Playstation 3's Cell Processor under Linux.  We covered the basic architecture, the syntax of the SPU assembly language, and the primary modes of communication between the SPE and the PPE.  In the next article, we will look at how to pump every ounce of performance out of the Cell SPEs that we can.  In later articles, we will then apply this knowledge to SPE programming in C, to make our lives just a little bit easier.
+</p>
+
+
+</docbody>
+<related-list>
+</related-list>
+
+<resource-list>
+<ul>
+<li>The details of every SPU instruction is available in the <a href="http://www-306.ibm.com/chips/techlib/techlib.nsf/techdocs/76CA6C7304210F3987257060006F2C44">SPU Instruction Set Architecture Reference Guide</a>.  However, most of the time you are better off looking at the short summaries in the <a href="http://www-306.ibm.com/chips/techlib/techlib.nsf/techdocs/EFA2B196893B550787257060006FC9FB">SPU assembly language</a> guide.  In fact, to get a good overview of what the SPU can do, I suggest a read through the assembly language guide.  It is both short and packed with information.  If the instruction doesn't make sense, then look up the full definition in the  instruction set architecture architecture referece.</li>
+<li>For ABI details, see the <a href="http://www-306.ibm.com/chips/techlib/techlib.nsf/techdocs/02E544E65760B0BF87257060006F8F20">SPU ABI documentation</a> as well as the <a href="http://www-306.ibm.com/chips/techlib/techlib.nsf/techdocs/44DA30A1555CBB73872570B20057D5C8">Linux extensions to the ABI</a>.</li>
+<li>An additional method of interprocess communication using special references called EAR references is this <a href="http://www.embedded.com/showArticle.jhtml?articleID=188101999">guide to CESOF linkables</a>.  However, the example given uses the function <code type="inline">copy_from_ls</code> which is not available in the open-source SDK, but is available in the IBM System Simulator for the Cell.  <code type="inline">copy_from_ls</code> and <code type="inline">copy_to_ls</code> allow you to perform DMA transfers without regards to alignment, but they both take considerably longer to run.</li>
+<li>Here is <a href="http://www.power.org/resources/devcorner/cellcorner/cellworkshop0606/Day1_09-1_CourseCode_L3T2H1-56_DevelopingCodeForCell-DMA.pdf">a good tutorial on DMA transfers on the Cell processor using C</a>.</li>
+<li>Here is <a href="http://www.power.org/resources/devcorner/cellcorner/cellworkshop0606/Day1_09-2_CourseCode_L3T2H1-55_DevelopingCodeForCell-Mailboxes.pdf">a more extensive tutorial on using mailboxes</a> (also in C).</li> 
+<li>The <a href="http://www-306.ibm.com/chips/techlib/techlib.nsf/techdocs/771EC60D862C5857872571A8006A206B">documentation of the SPE management library</a> describes in detail task creation and communication with SPEs from the PPE.</li>
+<li>The Definitive Source of Information about the Cell Processor itself is the <a href="http://www-306.ibm.com/chips/techlib/techlib.nsf/techdocs/9F820A5FFA3ECE8C8725716A0062585F">Cell BE Handbook</a>.</li>
+</ul>
+</resource-list>
+
+</dw-article>
+</dw-document>

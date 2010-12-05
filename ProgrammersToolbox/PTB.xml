@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!DOCTYPE book PUBLIC "-//OASIS//DTD DocBook XML V4.1.2//EN" [
+<!ENTITY MemoryManagement SYSTEM "MemoryManagement.xml">
+<!ENTITY Introduction SYSTEM "Introduction.xml">
+<!ENTITY SymbolicProgramming SYSTEM "SymbolicProgramming.xml">
+<!ENTITY FunctionalProgrammingIntro SYSTEM "FunctionalProgrammingIntro.xml">
+<!ENTITY Closures SYSTEM "Closures.xml">
+<!ENTITY RecursionProgramProving SYSTEM "RecursionProgramProving.xml">
+<!ENTITY MetaProgramming SYSTEM "MetaProgramming.xml">
+<!ENTITY SchemeMacros SYSTEM "SchemeMacros.xml">
+<!ENTITY PracticalMacros SYSTEM "PracticalMacros.xml">
+<!ENTITY Continuations SYSTEM "Continuations.xml">
+<!ENTITY OtherVariableScopes SYSTEM "OtherVariableScopes.xml">
+<!ENTITY LazyProgramming SYSTEM "LazyProgramming.xml">
+<!ENTITY Ambiguous SYSTEM "Ambiguous.xml">
+<!ENTITY EvaluatingLanguages SYSTEM "EvaluatingLanguages.xml">
+
+<!ENTITY c-macro-swap-example SYSTEM "Libraries/c_macro_swap_example.c">
+<!ENTITY sendmail-m4 SYSTEM "Libraries/sendmail.m4">
+]>
+<!--
+Articles Proposed:
+> 1) Memory Management
+> 2) List processing basics - an introduction to Scheme
+> 3) Functional Programming, Recursive Patterns, and Programs that Prove
+> Themselves Right
+> 4) Combining Functions into Bigger Functions
+> 5) Compile-time Programming 1: Scheme Macros
+> 6) Compile-time Programming 2: C++ Templates
+> 7) Lazy Evaluation and Lazy Data Structures
+> 8) Advanced Flow-Control Techniques
+
+-->
+<book>
+
+<title>The Programmer's Toolbox</title>
+<subtitle>Programming Tools to Double Your Effectiveness</subtitle>
+
+<bookinfo>
+<author>
+<firstname>Jonathan</firstname>
+<surname>Bartlett</surname>
+</author>
+<copyright><year>2004</year><holder>Jonathan Bartlett</holder></copyright>
+</bookinfo>
+
+&Introduction;
+<part>
+<title>Foundations</title>
+&MemoryManagement;
+&SymbolicProgramming;
+</part>
+
+<part>
+<title>Functional Programming</title>
+&FunctionalProgrammingIntro;
+&Closures;
+&RecursionProgramProving;
+</part>
+
+<part>
+<title>Program-Generating Programs</title>
+&MetaProgramming;
+&SchemeMacros;
+&PracticalMacros;
+</part>
+
+<part>
+<title>State Management and Flow Control</title>
+&Continuations;
+&OtherVariableScopes;
+&LazyProgramming;
+&Ambiguous;
+</part>
+
+&EvaluatingLanguages;
+
+</book>

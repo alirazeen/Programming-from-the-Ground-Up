@@ -1,0 +1,684 @@
+<chapter>
+<title>Introduction to Functional Programming in Scheme</title>
+
+<para>
+
+</para>
+
+
+
+<!--
+  <!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+  <meta http-equiv="content-type"
+ content="text/html; charset=ISO-8859-1">
+  <title>Functional Programming</title>
+</head>
+<body>
+<h1>Functional Programming</h1>
+<p>This talk is on Functional Programming.&nbsp; Functional Programming
+differs from Imperative Programming in that it is based on the creating
+and application of functions, rather than state modifications.&nbsp; In
+fact, in Functional Programming, state manipulation (setting local or
+global variables to values other than what they had when first created)
+is simply not allowed.&nbsp; However, before diving into full Functional
+Programming, we need to cover a few ideas about functions.&nbsp; All of
+the examples are in scheme, so you must know at least a little scheme,
+especially the lambda function.&nbsp; Functional Programming will be
+shortened to FP for this section.<br>
+</p>
+<h2>Closures and Higher-Order Functions: Functions on Steroids<br>
+</h2>
+<h3>Defining functions<br>
+</h3>
+In most programming languages, functions are named and defined at the
+same time, and always at compile time.&nbsp; That is, you can't rename a
+function at runtime, you can't create unnamed functions, and you can't
+create functions at runtime.&nbsp; In FP, function definition is
+separate from function naming.&nbsp; In scheme, for example, if you
+wanted to create a function that squared it's arguments, you would say:<br>
+<br>
+<pre>;Create a function which squares it's arguments (useless because it's unnamed and not used immediately)<br>(lambda (x) (* x x))<br><br>;Create a function which squares it's arguments and use it to square 5<br>((lambda (x) (* x x)) 5) -&gt; Returns 25<br><br>;Create a function which squares it's arguments, and use the name "square" to refer to it<br>(define square (lambda (x) (* x x)))<br>(square 5) -&gt; Returns 25<br>(square 6) -&gt; Returns 36<br><br></pre>
+<p>The second example probably needs some explanation.&nbsp; Think back
+to the evaluator in Fundamentals 2.&nbsp; The list, when evaluated,
+evaluates all members first.&nbsp; The first member is itself a list,
+which, when evaluated, RETURNS a function.&nbsp; In imperative
+programming, we don't normally think about returning a function.&nbsp;
+However, in scheme and other FP-capable languages, functions can be
+passed around like any other variable.&nbsp; Anyway, the lambda returns
+a function.&nbsp; Now, since the function is the first argument of the
+list, it applies that function to 5, yielding 25.<br>
+</p>
+<p>The third example defines a global name for the function, to make it
+easier to use subsequently.<br>
+</p>
+<h3>What is a closure?</h3>
+<p>In scheme, when you define a function, you can use all local
+variables which are in effect when that function is defined.&nbsp; The
+combination of the local variables and the function itself is called a
+closure.&nbsp; Most imperative languages do not have closures (though
+they can be simulated with objects), so it may take a few reads to get
+how they work.&nbsp; For example, let's say I want to create a function
+that adds 1 to it's argument:<br>
+</p>
+<pre>(define add1 (lambda (x) (+ x 1)))<br>(add1 3) -&gt; returns 4<br></pre>
+<p>This is nice and dandy, but let's now say we want functions that
+will add 1 to it's argument, another one to add 2, and so on.&nbsp; It
+would be a pain to write these out individually, so instead we write a
+function to create these adders for us.&nbsp; We can say this:<br>
+</p>
+<pre>(define create-adder (lambda (value) (lambda (x) (+ x value) ) ) )<br></pre>
+<p>This defines a function called create-adder, which returns a new
+function which adds the specified number to it's argument.&nbsp; For
+example, we can redefine add1 as<br>
+</p>
+<pre>(define add1 (create-adder 1))<br>(add1 3) -&gt; returns 4<br><br>(define add3 (create-adder 3))<br>(add3 12) -&gt; returns 15<br><br></pre>
+<p>We have a function which creates and returns a function.&nbsp; The
+created function is a closure, because it uses the local variables from
+it's parent function, namely "value".&nbsp; Each function that is
+created uses it's own version of "value".&nbsp; Therefore, each function
+is specialized.<br>
+</p>
+<h3>Closures that modify their closed variables<br>
+</h3>
+<p>When you have a closed variable, you can modify it, too.&nbsp; For
+example, we can create a function that will act as a counter - every
+time we call it, it will return a new number.&nbsp; We can do this using
+no global variables, even instantiating multiple counters.&nbsp; Here
+is how they work:<br>
+</p>
+<pre>(define make-counter (lambda (start increment)<br>  (lambda ()<br>    (let ( (return-val start) )<br>         (begin<br>           (set! start (+ start increment))<br>           return-val<br>         )<br>    )<br>  )<br>))<br><br>;(define mycounter (make-counter 0 1))<br>;(mycounter) -&gt; 0<br>;(mycounter) -&gt; 1<br>;(mycounter) -&gt; 2<br>;(define myothercounter (make-counter 55 -4))<br>;(myothercounter) -&gt; 55<br>;(myothercounter) -&gt; 51<br>;(mycounter) -&gt; 3<br>;(myothercounter) -&gt; 47<br><br></pre>
+<p>Notice how each of these functions get created with their own, local
+versions of start and increment.&nbsp; Any variable that was active
+before the function was created can continue to be accessed by the
+created function for the duration of it's life.<br>
+</p>
+<h3>Object-oriented programming with closures</h3>
+<p>In object-oriented programming, an object is a set of functions,
+called methods, which all operate on a "package" of local
+variables.&nbsp; Each instantiation of a class yields a separate
+"package" of local variables which share the same functions.&nbsp; In
+the closures we have been looking at, the closures act like an object
+with one method.&nbsp; However, you can do full object-oriented
+programming using closures.&nbsp; For example, we can create a counter
+with 3 member functions - getNextValue, setValue, and setIncrement.<br>
+</p>
+<pre>(define make-counter-object (lambda (start increment)<br>  (let<br>    (<br>      (getNextValue (lambda ()<br>                      (let ( (return-val start) )<br>                           (begin<br>                             (set! start (+ start increment))<br>                             return-val<br>                           )<br>                      )<br>                    )<br>      )<br>      (setValue (lambda (newval) (set! start newval) ) )<br>      (setIncrement (lambda (newincrement) (set! increment newincrement) ) )<br>    )<br>    (vector getNextValue setValue setIncrement)<br>  )<br>))<br><br>;(define mycountobj (make-counter-object 1 2))<br>;((vector-ref mycountobj 0)) -&gt; 1<br>;((vector-ref mycountobj 0)) -&gt; 3<br>;((vector-ref mycountobj 0)) -&gt; 5<br>;((vector-ref mycountobj 1) 44)<br>;((vector-ref mycountobj 0)) -&gt; 44<br>;((vector-ref mycountobj 0)) -&gt; 46<br><br></pre>
+<p>In this case, we are simply creating an array of functions which all
+share the same closure and returning it.&nbsp; Then, you just access the
+array element for the function you are wanting to use, and then call it
+according to its signature. &nbsp;Each function in the array is bound
+to the same variables, so they act exactly like methods on an object.
+&nbsp;In addition, since they act just like regular functions in
+scheme, you can pull them out and use them individually if you need to
+or want to.<br>
+</p>
+<h2>Recursion for Better Programming</h2>
+<p>A recursive function is a function that is defined in terms of
+itself - one that calls itself. &nbsp;For example, to compute the
+factorial of a number, we can write the following recursive function:<br>
+</p>
+<pre>(define factorial (lambda (x) <br>  (if (eqv? 1 x) <br>      1 <br>      (* x (factorial (- x 1)))<br>  )<br>))<br><br></pre>
+<p>If you start out with calling (factorial 5), x will get the value of
+5. &nbsp;Then, it will call factorial again, with 4. &nbsp;This creates
+a new activation record. &nbsp;An activation record is the data that a
+programming language uses to keep track of which function is running,
+what the variable bindings are, and where it should go when it is
+finished. &nbsp;In programming languages which allow recursive
+functions, a function creates an activation record for every
+currently-active call. &nbsp;So, by the time factorial 5 is at the end
+- 5 - 4 - 3 - 2 - 1 - there are 5 activation records for factorial -
+each of which holds it's current value of x and the point it should
+return to.<br>
+</p>
+<p>Because of the overhead in creating activation records, many
+imperative programmers try to avoid recursion. &nbsp;However, we will
+see later how FP languages avoid a lot of the cost of recursion, and
+why recursion leads to better programs. <br>
+</p>
+<h3>Writing recursive functions</h3>
+<p>When you think of a function which calls itself, you may wonder "how
+does it ever return?" &nbsp;The answer is that every recursive function
+has a base case. &nbsp;A base case is a condition which, if met, will
+cause the function to not call itself anymore, and simply return a
+value. &nbsp;In a recursive program, you must take care that the base
+case will always eventually be executed as long as the function is
+called with valid arguments. &nbsp;In our example of the factorial
+function, the base case was 1. &nbsp;When factorial reaches 1, &nbsp;it
+knows the answer to factorial(1) - it's 1. &nbsp;It can compute the
+rest of the answers from that. &nbsp;We also know that as long as
+factorial is called with an integer greater than 1 that we will hit the
+base case, since we decrement x in every case by one.<br>
+</p>
+<p>When you go to write recursive functions, you need to think of
+several things:<br>
+</p>
+<ul>
+  <li>Given a general problem, is there a way to convert this into
+terms of a slightly smaller problem?</li>
+  <li>Is there a size of the problem that is so trivial to solve that I
+can deduce the answer immediately?</li>
+</ul>
+In the case of the factorial problem, we know that the factorial of a
+number is that number times the factorial of the number below it -
+we've converted our problem into terms of a slightly smaller, but
+similar problem. &nbsp;We also know that the factorial of 1 is 1.
+&nbsp;Using these facts, we can come up with the solution above.<br>
+<br>
+Let's take the case of sorting. &nbsp;Let's say we want to write a
+function to sort a list.<br>
+<ul>
+  <li>Given the task of sorting, can we convert this into terms of a
+slightly smaller problem? &nbsp;Yes, we can sort every element but the
+first, and then find where the first element belongs.</li>
+  <li>Is there a size of the problem that is so trivial to solve that I
+can deduce the answer immediately? &nbsp;Yes, a list of one or zero
+elements is completely sorted.</li>
+</ul>
+Given that information, let's write our program, and replace any part
+we don't know how to do yet with a function:<br>
+<br>
+<pre>(define sort (lambda (the-list)<br>  (if (null? the-list)<br>      the-list<br>      (let<br>        (<br>          (first-element (car the-list))<br>          (remaining-elements (cdr the-list))<br>        )<br>        (insert-into-position first-element (sort remaining-elements))<br>      )<br>  )<br>))<br></pre>
+<p>And we have a sorting function. &nbsp;Wasn't that easy? &nbsp;Of
+course, we left out the definition of "insert-into-position", but
+that's not a big deal considering that the gist of the problem was
+figured out for us, just by answering those two questions. &nbsp;For
+those of you dying to see how insert-into-position works, let me show
+you:<br>
+</p>
+<pre>(define insert-into-position (lambda (element the-list)<br>  (insert-into-position-internal element '() the-list)<br>))<br><br>(define insert-into-position-internal (lambda (element elements-before other-elements)<br>  (if (null? other-elements)<br>      (append elements-before (list element))<br>      (let<br>        (<br>          (element-for-comparison (car other-elements))<br>        )<br>        (if (&lt; element element-for-comparison)<br>            (append elements-before (cons element other-elements))<br>            (insert-into-position-internal (append elements-before (list element-for-comparison)) (cdr other-elements))<br>        )<br>      )<br>  )<br>))<br><br></pre>
+<p>It looks a little complicated, but it's not that bad, especially
+after we finish this course!<br>
+</p>
+<h3>Proving recursive functions using induction</h3>
+<p>Given the quality of software today, it is obvious that few people
+know how to construct algorithms that are provably correct, much less
+those that take the time to do so. &nbsp;Recursive programs lend
+themselves to proofs, specifically, proofs by induction. &nbsp;For
+example, in mathematics, many theorems are proven by arithmetic
+induction. &nbsp;To prove a theorem true by arithmetic induction, you
+prove the if a theorem is true for a value n, it is also true for n +
+1. &nbsp;You then show that, for some given integer value of n, the
+theorem is true. &nbsp;You have now proved that the theorem is true for
+all integer values of n from the given value to infinity. &nbsp;The
+same concept applies to recursion, although we aren't always doing
+arithmetic induction - in fact, we are often using structural induction
+(using a list of size n, rather than the number n).<br>
+</p>
+<p>The elements of a proof are:<br>
+</p>
+<ul>
+  <li>Axioms - these are self-evident truths you are calling on to
+prove your theorem, or truths which have been established by others</li>
+  <li>Assumptions - these are the assumptions you are making about your
+data</li>
+  <li>Reasoning - these are the statements which string the Axioms
+together until they have proven your algorithm correct</li>
+</ul>
+To demonstrate an inductive proof, let's take a look at the Quicksort
+function. &nbsp;Here is the Scheme version of the Quicksort function:<br>
+<br>
+<pre>;INPUT:<br>;       A function to compare arguments (should return true if a &lt; b)<br>;       A list of elements to sort<br>;OUTPUT:<br>;       A list containing the same elements as input, but sorted<br>;PROCESSING:<br>;       Process is based on the QuickSort algorithm.  List is continually<br>;       divided into to parts by a dividing element until the list is down<br>;       to 0 or 1 elements.  They are then merged back together.<br>;<br><br>(define sort:quicksort (lambda (comparator the-list)<br>  <br>  (if (null? the-list)<br>      the-list<br>      (let ( (divider (first the-list))<br>             (rest-of-list (rest the-list)) ;the-list is the rest of the list<br>           )<br>           (if (null? rest-of-list)<br>               the-list<br>               (let* ( <br>                       ;NOTE - the lambda function converts the two-argument<br>                       ;       comparator into a one-argument true/false<br>                       ;       function<br>                       (filtered-list (sort:filter (lambda (a) (comparator a divider)) rest-of-list) )<br>                       (before (vector-ref filtered-list 0) ) <br>                       (after (vector-ref filtered-list 1) )  <br>                       ;NOTE - before and after are NOT sorted, they are only divided with reference to the divider<br>                     )<br>                     (sort:merge <br>                                (sort:quicksort comparator before) <br>                                divider <br>                                (sort:quicksort comparator after)<br>                     )<br>               )<br>           )<br>       )<br>   )<br>))<br><br><br><br>;INPUT: <br>;        before - a sorted list containing element less than divider<br>;        divider - an element greater-than all elements in before and less than<br>;                  or equal to all elements in after<br>;        after - a sorted list containing elements greater than or equal to divider<br>;OUTPUT:<br>;        a combined list of before, divided, and after<br>(define sort:merge (lambda (before divider after)<br>  (append before (cons divider after))<br>))<br><br><br><br><br>;INPUT:<br>;      filter - a true-false comparison function taking one argument<br>;      list - a list of elements to apply the comparison function to<br>;OUTPUT:<br>;      A pair whose car is a list of items which were answered true, and<br>;      whose cdr is a list of items which were answered false<br>(define sort:filter (lambda (filter list)<br>  (sort:filter-i '() '() filter list)<br>))<br><br>;NOTE - this function is used to perform the real work of sort:filter<br>;INPUT:<br>;      match-list - a list of items which were tested true on previous runs<br>;      not-match-list - a list of items which were tested false on previous runs<br>;      filter - the function which the list is being filtered by<br>;      original-list - remaining items which have not been tested<br>;OUTPUT:<br>;      Same as sort:filter<br>(define sort:filter-i (lambda (match-list not-match-list filter original-list)<br>  (if (null? original-list)<br>      (vector match-list not-match-list)  <br>      (let ( (item (first original-list))<br>       (rest-of-list (rest original-list))<br>     )<br>     (if (filter item)<br>         (sort:filter-i (cons item match-list) not-match-list filter rest-of-list)<br>         (sort:filter-i match-list (cons item not-match-list) filter rest-of-list)<br>     )<br>       )<br>   )<br>))<br><br></pre>
+<p>We are going to prove the program in two parts. &nbsp;First, we are
+going to prove that sort:quicksort is correct provided that sort:filter
+works properly. &nbsp;We are then going to prove that sort:filter works
+as described.</p>
+<p><br>
+Our Axioms:<br>
+</p>
+<ul>
+  <li>Axiom 1: any list of 0 or 1 element is sorted - it can be in no
+other order.</li>
+  <li>Axiom 2: &nbsp;Given an element e, if a sorted list l1 containing
+elements less than e and a sorted list l2 containing elments greater
+than or equal to e&nbsp; are combined into a list with the elements of
+l1&nbsp; first, then element e, then the elements of l2, the result is a
+sorted list</li>
+</ul>
+Let's look at our Quicksort program in light of these axioms:<br>
+<br>
+<pre>(define sort:quicksort (lambda (comparator the-list)&nbsp; <br>&nbsp; (if (null? the-list)<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; the-list ;List is sorted by Axiom 1<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; (let ( (divider (first the-list))&nbsp; ;divider is element e in axiom 2<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ;This could be any element in the<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ;list, but we took the first since<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ;it was the easiest<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; (rest-of-list (rest the-list)) ;the-list is the rest of the list<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; (if (null? rest-of-list)<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; the-list ;List is sorted by Axiom 1<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; (let* ( <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ;sort:filter will divide the list into elements which<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ;are greater than divider and less than divider, and<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ;put the results in a pair<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ;NOTE - the lambda function converts the two-argument<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; comparator into a one-argument true/false<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; function<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; (filtered-list (sort:filter (lambda (a) (comparator a divider)) rest-of-list) )<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; (before (vector-ref filtered-list 0) ) ;retrieve the less-than list<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; (after (vector-ref filtered-list 1) )&nbsp; ;retrieve the greater-than-or-equal-to list<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ;Note that before and after are NOT sorted, they are only divided with reference to the divider<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ;If n is the number of elements in the original list,<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ;before and after can have at minimum 0 and at most<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ;n - 1 elements each.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ;At n == 0 &amp; n == 1 the sorter will declare the list<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ;sorted, and at n &gt; 1, the sorter will continue dividing<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ;Therefore, for every finite list, it will eventually<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ;be reduced to a sorted list.&nbsp; Therefore, <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ;by Axiom 2, if we merge two sorted lists with their<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ;divider, the result is a sorted list.&nbsp; Since the merge<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ;operations do not start until we reached a sorted list<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ;(n == 0 or n == 1), the merge will only be called with<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ;a sorted list<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; (sort:merge <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; (sort:quicksort comparator before) <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; divider <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; (sort:quicksort comparator after)<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )<br>&nbsp;&nbsp; )<br>))</pre>
+<p>Since inductive proofs are recursive, it is much easier to prove a
+function to be correct if it is written recursively. &nbsp;Also, it is
+easier to prove the algorithm correct if it contains no assignments
+after the variables are initialized. &nbsp;If you assign your
+variables, you have to make sure your axioms hold true for any possible
+combination of assignments that may occur. &nbsp;If you only use
+procedure calling and variable creation to give variables values, then
+their defintions and validity are much easier to prove.<br>
+</p>
+<h3>Converting loops to recursion</h3>
+<p>I've found in my own programming that bad loops are one of the
+largest source of bugs in my programs. &nbsp;In FP, explicit looping
+constructs are not allowed. &nbsp;Instead you can convert loops into
+recursive functions. &nbsp;Let's take as an example the sort:filter
+function from Quicksort. &nbsp;That function is supposed to take an
+element and divide a list into two parts based on whether the elements
+are before or after the giving dividing element. &nbsp;In pseudo-code,
+a loop to perform that might look like:<br>
+</p>
+<pre>function sort:filter(divider, list)<br>{<br>   variable before_elements;<br>   variable after_elements;<br><br>   while(list.size() &gt; 0)<br>   {<br>       nextitem = list.remove_first();<br>       if(nextitem &gt; divider)<br>       {<br>          after_elements.add(nextitem);<br>       }<br>       else<br>       {<br>          before_elements.add(nextitem);<br>       }<br>   }<br>   return array(before_elements, after_elements);<br>}<br></pre>
+<p>Notice that while loops have a base case as well, it's just
+expressed backwards. &nbsp;While loops specify their continuing case,
+with the base case simply being where the continuing case is not true.
+&nbsp;Also, the loop makes use of several variables that persist
+through each loop repetition which are not in the function signature.
+&nbsp;This loop uses after_elements and before_elements. &nbsp;However,
+you cannot just call sort:filter and continue adding to those lists.
+&nbsp;Therefore, we have to split out the list into an auxiliary
+function, which I call sort:filter-i (for internal). &nbsp;This is the
+function that is actually recursing. &nbsp;sort:filter simply sets up
+sort:filter-i. &nbsp;sort-filter:i gets passed every variable which
+persists throughout our loop. &nbsp;Therefore, it will have to be
+passed divider, list, before_elements, and after_elements. &nbsp;Since
+nextitem is declared and then discarded within each loop invocation, it
+does not need to be passed. &nbsp;Therefore, we will have the function
+sort:filter-i, and sort:filter which initializes all of the values for
+sort:filter-i. &nbsp;Here they are (with an embedded proof):<br>
+</p>
+<pre>;INPUT:<br>;      filter - a true-false comparison function taking one argument<br>;      list - a list of elements to apply the comparison function to<br>;OUTPUT:<br>;      A pair whose car is a list of items which were answered true, and<br>;      whose cdr is a list of items which were answered false<br>(define sort:filter (lambda (filter list)<br>  ;Just initialize before_elements and after_elements for the loop<br>  (sort:filter-i '() '() filter list)<br>))<br><br>;NOTE - this function is used to perform the real work of sort:filter<br>;INPUT:<br>;      match-list - a list of items which were tested true on previous runs<br>;      not-match-list - a list of items which were tested false on previous runs<br>;      filter - the function which the list is being filtered by<br>;      original-list - remaining items which have not been tested<br>;OUTPUT:<br>;      Same as sort:filter<br>;<br>;PROOF:<br>;      Assumption 1) match-list and not-match-list contain appropriate elements<br>;<br>;      Axiom 1) Given Assumption 1, original-list contains elements that belong in either match-list or not-match-list<br>;      Axiom 2) Given assumption 1 and axiom 1, if original list is empty, <br>;               match-list and not-match-list contain all elements in the<br>;               original list<br>(define sort:filter-i (lambda (match-list not-match-list filter original-list)<br>  (if (null? original-list)<br>      (vector match-list not-match-list)  ; We are done by Axiom 2, return the result<br>      (let ( (item (first original-list))<br>       (rest-of-list (rest original-list))<br>     )<br>     (if (filter item)<br>               ;By Axiom 1, item must belong in one of the two lists.<br>               ;By definition, filter will tell us which one it belongs in.<br>               ;The arguments given match assumption 1.<br>               ;The list being filtered is now 1 element smaller than it was<br>               ;Therefore, as long as assumption 1 is filled in the original<br>               ;invocation, the function has provably filtered the items into<br>               ;correct lists<br>         (sort:filter-i (cons item match-list) not-match-list filter rest-of-list)<br>         (sort:filter-i match-list (cons item not-match-list) filter rest-of-list)<br>     )<br>       )<br>   )<br>))<br><br></pre>
+<h3>Tail-Call Optimization<br>
+</h3>
+<p>You may be thinking that this uses a lot of stack space needlessly,
+since we have to store all of the activation records of the functions.
+&nbsp;Although many recursive functions do require a lot of stack space
+for activation records, most while loops can be made tail-recursive so
+that they don't take up extra stack space on FP languages.<br>
+</p>
+<p>To understand tail-recursion, you have to think about why activation
+records have to be stored in recursive programs to begin with.
+&nbsp;The reason we have activation records is so that we know the
+state of all of our variables when control passes back to our function.
+&nbsp;However, if a function is called in tail position - that is, it's
+the last thing to be called before the function returns, it doesn't
+need to remember it's local variables - the only thing it cares about
+is the result of the last function, and that's just so it can pass it
+back to the parent. &nbsp;Therefore, before calling a function which is
+in tail-position, a function can dispose of it's activation record, and
+just have the called function pass the argument directly back to it's
+parent. &nbsp;Let's look at our factorial function to get a better
+grasp on this:<br>
+</p>
+<pre>(define factorial (lambda (x) <br>  (if (eqv? 1 x) <br>      1 <br>      (* x (factorial (- x 1)))<br>  )<br>))<br><br></pre>
+<p>In this case, when factorial is called, we have to keep the
+activation record around, because we still have to do the multiply
+before passing control back to the parent function. &nbsp;The multiply
+is in tail position, because it is the last step before returning.
+&nbsp;Therefore, although we have to create all of our activation
+records for factorial, &nbsp;we can throw them away as soon as we call
+multiply, and just wire multiply to return to our parent.<br>
+</p>
+<p>However, let's say that we rewrite our factorial function like this:<br>
+</p>
+<pre>(define factorial (lambda (x)<br>  (factorial-i x 1)<br>))<br><br>(define factorial-i (lambda (x current-result)<br>  (if (eq? x 1)<br>      current-result<br>      (factorial-i (- x 1) (* x current-result))<br>  )<br>))<br><br></pre>
+<p>In this revision, the recursive call to factorial-i is in tail
+position, so although it is a recursive procedure, it doesn't build up
+extra space on the stack. &nbsp;It can delete the current activation
+record before issuing the recursion, thus making it about as efficient
+in both time and space as our while loop! &nbsp;In addition, you get
+the validation benefits of recursion.<br>
+</p>
+<p>Not all recursive functions can be redefined into tail-recursive
+functions, but many of them can.<br>
+</p>
+<h2>Functional Programming Basics</h2>
+<p>We have discussed closures and recursive functions, the reason for
+which is to give us the tools to write functional programs. &nbsp;You
+can write functional programs without recursion and closures, you just
+can't write very complex ones :) &nbsp;Now we will get into the heart
+of the matter and discuss FP itself.<br>
+</p>
+<h3>What is Functional Programming</h3>
+<p>The idea behind functional programming is simple - computer
+functions should operate like mathematical functions - for a given
+input, a function should always return the same output. &nbsp;Functions
+are used to map input values (the domain) to output values (the range).
+&nbsp;At first glance, it may seems like this is already the case.
+&nbsp;However, think of Object-Oriented programming. &nbsp;A Bank
+object may have an accessor called getCurrentBalance and a mutator
+called makeDeposit. &nbsp;In OO, you could have an interaction like
+this:<br>
+</p>
+<pre>a = bank.getCurrentBalance(); /* let's say this returns 100.  "bank" is an implicit parameter to this function */<br>bank.makeDeposit(40);<br>b = bank.getCurrentBalance(); /* This now returns 140.  This violates FP because two calls with the same parameter gave different results */<br><br></pre>
+<p>Assignment and mutating values make reasoning about programs very
+difficult. &nbsp;FP requires that instead of assignment/mutation that
+you copy the object and give it new values. &nbsp;The FP equivalent
+might look like this:<br>
+</p>
+<pre>bank.getCurrentBalance();  /* let's say this returns 100 */<br>newbank = bank.makeDeposit(40); /* creates a new instance with the account balance */<br>newbank.getCurrentBalance(); /* this returns 140.  This is fine, since getCurrentBalance has a different parameter - newbank */<br><br></pre>
+<p>The basics of functional programming include:<br>
+</p>
+<ul>
+  <li>Programming without assignment statements</li>
+  <li>Programming without side-effects</li>
+  <li>Programming without explicit loop structures using recursion</li>
+  <li>Programming using more advanced and flexible structures:</li>
+  <ul>
+    <li>Closures</li>
+    <li>Lazy Evaluation</li>
+    <li>Data Persistence (slightly different meaning than usual)</li>
+    <li>Garbage Collection</li>
+    <li>Recursion and Tail-Recursion Optimization</li>
+    <li>Continuations</li>
+  </ul>
+</ul>
+<p>Although Functional Programming lacks side-effects, it still has a
+concept of variables. &nbsp;However, variables are a poor term because
+they are fixed at creation time (i.e. - they don't vary). &nbsp;
+Functional Programming often uses the following terms instead:<br>
+</p>
+<ul>
+  <li>Symbol - this is what is normally referred to as a variable.
+&nbsp;It's slightly different, since most functional programming
+languages can manipulate the symbols themselves as well as the contents.
+&nbsp;Also, since there are no assignment statements, a symbol's value
+is fixed throughout it's lifetime.</li>
+  <li>Binding - when a symbol comes into scope, it gets bound to a
+value for it's lifetime.</li>
+  <li>Persistence - in Functional Programming, persistence refers to
+the fact that you can never change data, so you can always keep previous
+data around - it persists as long as you have a reference to it.
+&nbsp;In non-functional programs, assignments permanently write over old
+data.</li>
+</ul>
+<h3>Functional Programming Advantages</h3>
+<ul>
+  <li>Programs can be shown to be correct with greater ease, especially
+using mathematical induction principles</li>
+  <li>Recursive programs lend themselves to inductive proofs</li>
+  <li>How a symbol's value is determined is immediately obvious by
+looking at it's creation statement</li>
+  <li>Because there is no danger of inadvertent data modification,
+functions can be combined together in more powerful and complex ways</li>
+  <li>Because there is no danger of inadvertent data modification, data
+structure internals can be shared among multiple data structures and
+data structure instances</li>
+  <li>Closures allow for the ability to build and use specialized
+versions of functions at run-time, called higher-order functions</li>
+  <li>Easier to re-use existing functions in new ways</li>
+  <li>Tail recursion elminates the stack overhead usually thought of
+when dealing with recursion. &nbsp;When recursions occur in tail
+position, the current stack frame can be discarded because it is no
+longer used - return value from new procedure can be directly handed to
+calling procedure without going through the current procedure.
+&nbsp;Therefore, the current stack frame can be eliminated.</li>
+  <li>Less need for locking since values can't change<br>
+  </li>
+</ul>
+<h3>Functional Programming Disadvantages</h3>
+<ul>
+  <li>Input/Output is hard</li>
+  <li>Programs require more thought, although usually less time to
+write (due to shorter debugging time and more powerful constructs)</li>
+  <li>Fewer people know functional programming</li>
+  <li>Current Functional Programming languages have fewer standard
+libraries</li>
+  <li>Current mainstream standard libraries are impossible to use in a
+functional setting</li>
+  <li>Often slower (however, Lisp is sometimes faster than C/C++)<br>
+  </li>
+</ul>
+<h3>Functional Programming Languages</h3>
+<p>You can do functional programming in any language, simply by
+omitting all assignment statements except when the variable is created.
+&nbsp;However, if the language and standard library are not geared
+toward functional programming, this may make writing real programs in a
+functional style difficult or impossible. &nbsp;These languages support
+functional programming:<br>
+</p>
+<ul>
+  <li>Scheme - Scheme supports functional programming beautifully, but
+supports non-functional programming as well. &nbsp;All standard library
+functions which are not functional have an exclamation point in their
+name (like <span style="font-family: monospace;">set!</span>).</li>
+  <li>Lisp - Supports many paradigms, including Object-Oriented
+Programming, Generic Programming, and Functional Programming. &nbsp;This
+was the original language that supported the features needed to do real
+functional programming. &nbsp;Even though it was made in the 1960s, it
+has always had features that many "modern" languages are just coming out
+with.</li>
+  <li>Standard ML - Although you can program in a non-functional manner
+with Standard ML, it greatly encourages you not to. &nbsp;In order to
+make a variable assignable, you have to create it differently.
+&nbsp;This language is very terse and mathematical, which makes writing
+valid programs almost like writing valid equations</li>
+  <li>Haskell - This is a purely functional programming language.
+&nbsp;There are no features for non-functional programming.</li>
+</ul>
+<h2>Functional Programming Patterns</h2>
+<p>Functional programming is a very different way of programming.
+&nbsp;Before writing your own functional programs it helps to know the
+patterns commonly used.<br>
+</p>
+<h3>List Iteration Pattern</h3>
+<p>Often when iterating through lists, you will need to iterate through
+a lists elements either until the end of the list or some other event
+occurs. &nbsp;This is done in three steps:<br>
+</p>
+<ul>
+  <li>Program starts with list in argument</li>
+  <li>Program determines if list is empty</li>
+  <li>If it is empty</li>
+  <ul>
+    <li>We're done. &nbsp;Return the result</li>
+  </ul>
+  <li>If it is not empty</li>
+  <ul>
+    <li>Process current value (the one at the head of the list)</li>
+    <li>Call function recursively with the remaining list and possibly
+other information</li>
+  </ul>
+</ul>
+The last two steps may need to be switched depending on your
+application. &nbsp;Also, if your application requires early termination,
+that would need to be here. &nbsp; As an example, here is a function
+which searches through a list looking for a value. &nbsp;It returns true
+if it finds it, and false otherwise.<br>
+<br>
+<pre>(define (search-for-value list val)<br>  (if (null? list)<br>      #f<br>      (let<br>          (<br>            (current-value (first list))<br>            (remaining-list (rest list))<br>          )<br>          (if (eqv? current-value val)<br>               #t<br>               (search-for-value remaining-list val)<br>          )<br>      )<br>  )<br>)<br><br></pre>
+<p>Note that when the recursive call is the last thing the function
+does, it gets called tail-recursively, which prevents the stack from
+growing.<br>
+</p>
+<h3>Accumulation Pattern</h3>
+<p>Many problems require that as a function gets called recursively, it
+accumulates data as it goes for future iterations of the process to
+have. &nbsp;Let's look at a specific implementation of the <span
+ style="font-family: monospace;">factorial</span> function,
+cross-referenced to the description of the pattern step below:<br>
+</p>
+<pre>;Main Function Entry<br>(define (factorial x)<br>  (factorial-helper x 1)<br>)<br><br>;Accumulation Function Signature<br>(define (factorial-helper x accumulated-result)<br>  ;Base Case / Termination Case Test<br>  (if (eqv? x 1)<br>    accumulated-result<br>    (let<br>      (<br>        ;Calculation of Accumulated Results<br>        (new-accumulated-result (* x accumulated-result))<br>        ;Calculation of Next Iterated Value<br>        (new-x (- x 1))<br>      )<br>    )<br>    ;Recursion<br>    (factorial-helper new-x new-accumulated-result)<br>  )<br>)&nbsp;<br><br></pre>
+<p>There are several parts to this pattern:<br>
+</p>
+<ul>
+  <li>Main Function Entry - this is the function signature that most
+people will use to call the function - it does not include accumulation
+information. &nbsp;It's only purpose is to validate arguments and seed
+the accumulating function with an initial value.</li>
+  <li>Accumulation Function Signature - this is an "internal" function
+(only meant to be called from the main function entry) which includes
+the accumulated result in the function signature</li>
+  <li>Base Case / Termination Case Test - this is the condition on
+which to stop processing and exit. &nbsp;The main function entry should
+be written to validate arguments against an infinite loop (the example
+was not - look at what would happen if 0 were passed in...)</li>
+  <li>Calculation of Accumulated Results - the new accumulated result
+is calculated to be passed to the next iteration</li>
+  <li>Calculation of Next Iterated Value - the next value to be
+processed is determined</li>
+  <li>Recursion - The next iterated value and calculation of
+accumulated results are passed to the next iteration of this function.
+&nbsp;Since this is the last step, the function is tail-recursive, and
+will not grow stack space.</li>
+</ul>
+Note that often the List Iteration pattern and Accumulation pattern are
+combined when doing accumulations on lists.<br>
+<h3>List Translation Pattern<br>
+</h3>
+<p>Many functions can be envisioned as the conversion or translation of
+one list to another. &nbsp;For example, you may need a function that
+takes in a list of people and spits out a list of their salaries.
+&nbsp;Or one that takes in a list of email addresses and returns a list
+of MX records that correspond to their address. &nbsp;Or one that takes
+in a list of characters and returns a list of the corresponding ASCII
+codes. &nbsp;Any sort of operation where you have a list and must
+generate a new list where each entry of the original list has exactly
+one entry in the new list falls into this category (note that although
+we say that there is a one-to-one association, either side can be a
+multi-valued structure such as an array). &nbsp;Also, the results cannot
+depend on the order that the associations are found - the process has to
+work whether you go first to last, last to first, or randomly.<br>
+</p>
+<p>In functional programming terms, this is called a <span
+ style="font-style: italic;">mapping</span> - each of the original list
+entries is said to be <span style="font-style: italic;">mapped</span> to
+a corresponding result. &nbsp;Most functional languages have a built-in
+procedure for it. &nbsp;In Scheme, it's called <span
+ style="font-family: monospace;">map</span>. &nbsp;Here is an example
+of mapping a list of numbers to their squares.<br>
+</p>
+<pre>(define (square x)<br>  (* x x)<br>)<br><br>(define number-list '(3 2 3 8 4 3 2 9))<br><br>(map square number-list)<br><br>RESULT: (9 4 9 64 16 9 4 81)<br><br></pre>
+<p>List iteration is probably the most powerful and most-used pattern
+in functional languages.<br>
+</p>
+<h3>Filtering a List Pattern</h3>
+<p>Filtering lists is another powerful pattern in functional languages.
+&nbsp;In a filter, you take a list and a predicate function. &nbsp;The
+filtering function returns only elements that return true for the
+predicate. &nbsp;Again, order cannot be taken into account in the
+filtering function. &nbsp;For example, you may filter a list of input
+values with a validation predicate, and return only those who match the
+predicate. &nbsp;Unfortunately, there is no standard <span
+ style="font-family: monospace;">filter</span> function in scheme.<br>
+</p>
+<h3>Partitioning a List Pattern</h3>
+<p>Partitioning is similar to filtering, except it allows multiple
+predicates and returns multiple lists (one for each predicate). &nbsp;It
+is the equivalent of running filter several times, with the benefit that
+it only has to iterate through the list once. &nbsp;Again, there is no
+standard <span style="font-family: monospace;">partition</span> function
+in the Scheme language.<br>
+</p>
+<h3>Path Copying Pattern</h3>
+<p>Since functional programs never modify data, to <span
+ style="font-style: italic;">change</span> a data structure really
+requires that you copy it with modifications. &nbsp;However, for large,
+deeply nested, recursive data structures this takes a lot of time and
+storage space. &nbsp;However, a technique known as <span
+ style="font-style: italic;">path copying</span> will allow you to do
+this as cheaply as possible. &nbsp;The principle behind path copying is
+that since most of the data structure did not change, much of it can be
+shared between the old and the new versions of the data structure.
+&nbsp;This is not dangerous (as it would be with imperative programming)
+because these structures can never change. &nbsp;Therefore, path copying
+copies the root node and all intermediary nodes of the data structure
+until it hits the node needing modification. &nbsp;It then uses the new
+version of the record instead of the old one. &nbsp;It is called path
+copying because all of the nodes connected in the path from the root to
+the modified node are copied with modifications. &nbsp;Anything not in
+the direct path is left unmodified, and linked to from the newly
+modified nodes. &nbsp;The steps for the pattern are as follows:<br>
+</p>
+<ul>
+  <li>Start at the root node</li>
+  <li>For each node you encounter</li>
+  <ul>
+    <li>Check to see if it is the modified node. &nbsp; If so, return
+the modified node</li>
+    <li>Otherwise, run this procedure for the next node in the search
+path</li>
+    <li>Copy this node exactly, except for the path you took to search.
+&nbsp;In this case use the returned node for the search path</li>
+    <li>Return the newly created node</li>
+  </ul>
+  <li>The root node is copied as well, pointing to the node returned
+from the previous steps.</li>
+  <li>This new root node is handed to the program as the modified data
+structure<br>
+  </li>
+</ul>
+<p>The binary tree example uses path copying extensively.<br>
+</p>
+<p>Note that path copying does not work with structures that are linked
+both forwards and backwards.<br>
+</p>
+
+<h2>Resources</h2>
+<h3>Books<br>
+</h3>
+<h4>Books on Lisp</h4>
+<ul>
+  <li><span style="text-decoration: underline;">Common Lisp: The
+Language</span> by Steele - <a
+ href="http://www.amazon.com/exec/obidos/ASIN/1555580416/freeeducation-20">buy
+the book</a>, <a
+ href="http://www-2.cs.cmu.edu/Groups/AI/html/cltl/cltl2.html">read
+online version</a></li>
+  <li><span style="text-decoration: underline;">ANSI Common LISP</span>
+by Graham - <a
+ href="http://www.amazon.com/exec/obidos/ASIN/0133708756/freeeducation-20">buy
+the book</a>, <a href="http://www.paulgraham.com/acl.html">book's
+website</a></li>
+  <li><span style="text-decoration: underline;">On Lisp</span> by Graham
+- <a
+ href="http://www.amazon.com/exec/obidos/ASIN/0130305529/freeeducation-20">buy
+the book</a>, <a href="http://www.paulgraham.com/onlisptext.html">read
+online version</a></li>
+  <li>Anatomy of LISP by Allen - <a
+ href="http://www.amazon.com/exec/obidos/ASIN/007001115X/freeeducation-20">buy
+the book</a></li>
+</ul>
+<h4>Books on Other Functional Languages</h4>
+<ul>
+  <li><span style="text-decoration: underline;">ML for the Working
+Programmer</span> by Paulson - <a
+ href="http://www.amazon.com/exec/obidos/ASIN/052156543X/freeeducation-20">buy
+the book</a></li>
+  <li><span style="text-decoration: underline;">Haskell: The Craft of
+Functional Programming</span> by Thompson - <a
+ href="http://www.amazon.com/exec/obidos/ASIN/0201342758/freeeducation-20">buy
+the book</a></li>
+  <li><span style="text-decoration: underline;">The Haskell School of
+Expression: Learning Functional Programming through Multimedia</span> by
+Hudak - buy the book</li>
+  <li><span style="text-decoration: underline;">Miranda: The Craft of
+Functional Programming</span> by Thompson - <a
+ href="http://www.amazon.com/exec/obidos/ASIN/0201422794/freeeducation-20">buy
+the book</a><br>
+  </li>
+</ul>
+<h4>Books on Functional Programming</h4>
+<ul>
+  <li><span style="text-decoration: underline;">Introduction to
+Functional Programming</span> by Bird, Scruggs, and Mastropieri - <a
+ href="http://www.amazon.com/exec/obidos/ASIN/0134843460/freeeducation-20">buy
+the book</a></li>
+  <li><span style="text-decoration: underline;">The Functional Approach
+to Programming</span> by Cousineau, Mauny, and Callaway - <a
+ href="http://www.amazon.com/exec/obidos/ASIN/0521576814/freeeducation-20">buy
+the book</a></li>
+  <li><span style="text-decoration: underline;">Purely Functional Data
+Structures</span> by Okasaki - <a
+ href="http://www.amazon.com/exec/obidos/ASIN/0521663504/freeeducation-20">buy
+the book</a>, <a href="http://www.cs.cmu.edu/%7Erwh/theses/okasaki.pdf">read
+online pdf</a></li>
+  <li><span style="text-decoration: underline;">Algorithms: A
+Functional Programming Approach</span> by Lapalme and Rabhi - <a
+ href="http://www.amazon.com/exec/obidos/ASIN/0201596040/freeeducation-20">buy
+the book</a></li>
+  <li><span style="text-decoration: underline;">The Lambda Calculus</span>
+by Barendregt - <a
+ href="http://www.amazon.com/exec/obidos/ASIN/0444875085/freeeducation-20">buy
+the book</a></li>
+  <li><span style="text-decoration: underline;">An Introduction to
+Functional Programming Through Lambda Calculus</span> by Michaelson - <a
+ href="http://www.amazon.com/exec/obidos/ASIN/0201178125/freeeducation-20">buy
+the book</a></li>
+</ul>
+
+</body>
+</html>
+-->
+
+</chapter>

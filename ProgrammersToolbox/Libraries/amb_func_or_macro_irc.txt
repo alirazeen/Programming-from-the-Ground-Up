@@ -1,0 +1,34 @@
+<soegaard> E.g (define (amb-list l) (list-ref l (number-between 0 (length l)))) where number-between is the function defined in "Learn Scheme in a Fixnum of Days" (and which uses amb)
+<johnnyb> Very interesting.
+<johnnyb> Yeah, I got my amb function by modifying the TY Scheme version (after first converting it to a syntax-rules() macro)
+<-- Godfroy has quit (Read error: 110 (Connection timed out))
+<-- kanaldrache has quit (Remote closed the connection)
+--> jao (~user@103.Red-80-33-152.pooles.rima-tde.net) has joined #scheme
+<yome> johnnyb, do you have that syntax-rules version around?
+<johnnyb> Yeah, hold on:
+<johnnyb> http://www.rafb.net/paste/results/zQLlly24.html
+<johnnyb> I _should_ use let-syntax instead of the "__internal" idea that I was using, but I was way too lazy.
+<Riastradh> You don't need all that complexity at all, johnnyb.
+<johnnyb> (i.e. have an amb-internal syntax that I use internally)
+<Riastradh> And parentheses get _really_ lonely when they're put on their own line.
+<johnnyb> It makes it easier for me to read :)
+<johnnyb> One every once in a while won't kill you.
+<Riastradh> They're sharp & painful, and they get psychotic when lonely.
+<yome> johnnyb, every time you leave a paren on a line by itself, God kills a kitten.
+<Riastradh> With that parenthesis!
+<Riastradh> Unless it is reasonably justified, but there are only very rare cases for reasonable justifications of lonely parentheses.
+<yome> Bloody parenthesis. You don't want that, johnnyb, do you?
+<johnnyb> It was a pretty literal rewrite of the TY Scheme version.  I still don't really understand it enough to know if there was an easier way.
+<Riastradh> Here is a much simpler definition of AMB that is so much simpler I sha'n't even make a paste for it:
+<Riastradh> Better yet, I'll paste it in #schemerepl.
+<johnnyb> hold on
+<johnnyb> I don't think GUILE will like that.
+<johnnyb> Nevermind, it works.
+<johnnyb> I've had trouble in GUILE sometimes when the "..." doesn't directly follow the variable in the same way it occurred in the template.
+<yome> Riastradh, very nice.
+<yome> johnnyb, consider using something else than Guile..
+<johnnyb> * applause *
+<johnnyb> using chicken right now.
+<johnnyb> very fast.  me likey.
+<yome> Very good.
+<Riastradh> Even nicer would be to use Danvy & Filinski's monadic reflect & reify operators.

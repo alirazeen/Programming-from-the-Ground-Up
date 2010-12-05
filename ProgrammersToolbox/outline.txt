@@ -1,0 +1,31 @@
+1) Introduction to the Importance of Programming Languages
+2) Introduction to Languages Used
+   * Scheme
+   * Perl
+   * C++
+   * Mathematica?
+   * Python?
+   * Ocaml?
+   * JavaScript
+3) Memory Management
+4) Function-Generating Functions w/ Closures
+4) Provably Correct Programs w/ Recursion
+5) Augmenting Your Language
+   * how to augment languages (Perl and Scheme)
+   * making shortcuts 
+   * creating business code templates
+   * adding features from other languages
+6) Fun with Scope
+   * static scope (let)
+   * dynamic scope (let-dynamic)
+   * syntactic scope (let-here & "static" variables)
+   * local?
+   * global scope (define)
+   * using scope to simplify programs
+7) Abstracting Flow-Control w/ Continuations
+8) Dynamic Dispatch and Object-Oriented Programming
+   * vtable dispatch
+   * method-name dispatch
+9) Policy Classes using Templates
+10) Compile-Time Programming
+11) Lazy Programming

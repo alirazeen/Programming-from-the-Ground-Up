@@ -1,0 +1,424 @@
+<?xml version="1.0" ?>
+
+<dw-document xsi:noNamespaceSchemaLocation="http://dw.raleigh.ibm.com/developerworks/library/schema/4.0/dw-document-4.0.xsd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+<dw-article local-site="worldwide" ratings-form="auto" related-contents="auto" toc="auto" skill-level="3">
+<id cma-id="" domino-uid="" content-id="" original="yes"/>
+<keywords content="lazy programming, lazy evaluation, normal order
+evaluation, applicative order evaluation, call by need, call by value,
+streams, infinite lists, lazy," />
+
+<!-- FIXME - update meta -->
+<meta-last-updated day="24" month="04" year="2006" initials="jlb"/>
+
+<content-area-primary name="linux" />
+
+<title>Lazy Programming</title>
+
+<author jobtitle="Director of Technology" company="New Media Worx" email="johnnyb@eskimo.com"  >
+<bio>Jonathan Bartlett is the author of the book <a href="http://www.cafeshops.com/bartlettpublish.8640017"><i>Programming from the Ground Up</i></a> which is an introduction to programming using Linux assembly language.  He is the lead developer at New Media Worx, developing web, video, kiosk, and desktop applications for clients.
+</bio>
+<name>Jonathan Bartlett</name>
+</author>
+
+<!-- FIXME - update date published -->
+<date-published day="01" month="09" year="2004" /><abstract>
+Lazy programming is a general concept of delaying the processing of a function or request until the results are needed.  This concept has numerous applications, from the obvious to the obscure.  Thinking in terms of lazy programming can help you rid your code of unneeded computation and restructure programs to be more problem-oriented.
+</abstract><docbody>
+
+<heading refname="" type="major" toc="yes" alttoc="">Simple Lazy Programming in Scheme</heading>
+
+<p>
+Lazy programming is a technique that allows you to delay the evaluation of code until you need the resulting value.  In Scheme, lazy programming is explicitly supported through two special constructs.  Scheme's <i>delay</i> special form takes a block of code, and, rather than executing it, stores the code to be executed and its parameters as a <i>promise</i>.  If you <i>force</i> the promise to produce a value, it will then run the code.  The promise then saves the result, so that future requests for the value will be returned instantly without having to execute the code again.
+</p>
+
+<p>
+Here is a simple example of how <code type="inline">delay</code> and <code type="inline">force</code> work together:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 1. Example usage of delay and force</heading>
+;;The multiplication is saved but not executed
+(define my-promise (delay (* 5 6 7 8 9)))
+
+;;Again, saved but not executed
+(define another-promise (delay (sqrt 9)))
+
+;;Forces the multiplication to execute.  Saves and returns the value
+(display (force my-promise))
+(newline)
+
+;;This time, the multiplication doesn't have to execute.  It just returns
+;;the value that was previously saved.
+(display (force my-promise))
+(newline)
+
+;;This produces an error, because the promise must be forced to be used
+(display (+ my-promise (force another-promise)))
+</code>
+
+
+<p>
+These constructs are fairly simple to use, but what are they used for?  Generally, lazy programming is used when a function generates a value which may not be used by the calling program.  For example, lets say that we had a function which computed the mean, variance, and the standard deviation of a list of numbers.  Here is one way of doing it:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 2. Simple Statistical Calculations</heading>
+(define (square x) (* x x))
+(define (calculate-statistics the-series)
+   (let* (
+          (size (length the-series))
+          (sum (apply + the-series))
+          (mean (/ sum size))
+          ;variance is the sum of (x[i] - mean)^2 for all list values
+          (variance 
+            (let* (
+                   (variance-list (map (lambda (x) (square (- x mean))) the-series)))
+              (/ (apply + variance-list) size)))
+          (standard-deviation (sqrt variance)))
+     (vector mean variance standard-deviation)))
+
+;Run the program
+(display (calculate-statistics '(2 6 4 3 7 4 3 6 7 8 43 4 3 2 36 75 3)))
+(newline)
+</code>
+
+
+<p>
+Now, let's say that we only want the standard deviation under certain conditions.  This function has already spent a lot of computational power computing it.  There are several ways we could solve this.  We could have separate functions for calculating the mean, variance, and standard deviation.  However, in that case, each function would have to re-do the work of calculating the mean.  If you needed all three, you would wind up calculating the mean three times, the variance twice, and the standard deviation once.  That's a lot of extra, useless, work.  Now, you could also require that the standard deviation function be passed the mean, and force the user to call the mean-calculating function for you.  That is possible, but it makes a really horrendous API, with the interface reflecting all sorts of implementation-specific pieces.
+</p>
+
+<p>
+A better way might be to use lazy evaluation to delay computation:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 3. Statistical Calculations with Lazy Evaluation</heading>
+(define (square x) (* x x))
+(define (calculate-statistics the-series)
+   (let* (
+          (size (delay (length the-series)))
+          (mean (delay (/ (apply + the-series) (force size))))
+          ;variance is the sum of  (x[i] - mean)^2
+          (variance 
+            (delay 
+              (let* (
+                     (variance-list (map (lambda (x) (square (- x (force mean)))) the-series)))
+                (/ (apply + variance-list) (force size)))))
+          (standard-deviation (delay (sqrt (force variance)))))
+     (vector mean variance standard-deviation)))
+
+;Run the program
+(define stats (calculate-statistics '(2 6 4 3 7 4 3 6 7 8 43 4 3 2 36 75 3)))
+(define mean (force (vector-ref stats 0)))
+(define variance (force (vector-ref stats 1)))
+(define stddev (force (vector-ref stats 2)))
+(display (list mean variance stddev))
+(newline)
+</code>
+
+
+<p>
+In this version of <code type="inline">calculate-statistics</code>, <i>nothing happens until a value is needed</i>, and, just as importantly, <i>nothing is calculated more than once</i>.  If you request the variance first, it will run <i>and save</i> the mean first, then it will run and save the variance.  If you next ask for the mean, it has already been calculated, so it simply returns the value.  If you next ask for the standard deviation, it uses the saved value for the variance, and calculates it from that.  Now there is no unnecessary computation performed, and the function interface is essentially retained.
+</p>
+
+<p>
+This type of laziness can be done fairly simply in an object-oriented language as well.  Anywhere you need a group of related calculations, you can create a class to hold intermediate values.  The constructor takes the initial values used, and all of the computed values would be set to null.  Instead of using force, you would have a getter for each value, which would check to see if the value is null, and if not, run the calculation.  Here is the skeleton of such a class in Java:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 4. Reformulating Lazy Evaluation in Java</heading>
+public class StatisticsCalculator {
+       private List the_series;
+       private Double mean;
+       private Integer size;
+       private Double variance;
+       private Double standard_deviation;
+       public StatisticsCalculator(List l)
+       {
+          the_series = l;
+       }
+       public int getSize()
+       {
+          if(size == null)
+          {
+             size = the_series.size();
+          }
+          return size;
+       }
+       public double getStandardDeviation()
+       {
+          if(stddev == null)
+          {
+             stddev = Math.sqrt(getVariance());
+          }
+          return stddev;
+       }
+       ...
+       ...
+}
+</code>
+
+
+<p>
+As you can see, the class itself acts as a multivalued promise, and the instance variables hold the results of the calculations.  Each function checks whether or not the code has been executed by checking to see if the variables are null.  If a variable does not have a value when it is needed, the code is executed and the value is saved.  Note that if <code type="inline">null</code> was in the valid range for the value, you would need an auxillary flag to use for whether or not the code had been executed, rather than just checking to see if the value is null.
+</p>
+
+<p>
+As you can see, lazy programming techniques can be used to help make a sensible and efficient API for functions which return interdependent values.  In addition, lazy techniques can be implemented through classes in languages that do not have direct support for lazy programming.  
+</p>
+
+
+<heading refname="" type="major" toc="yes" alttoc="">Indeterminate Lists</heading>
+<p>
+Let's say that I have a list of all the numbers that are a multiple of five.  Then, I want to square all of those numbers.  Finally, I want to iterate through the result and display all of those whose results are less than 500.  What?  I can't operate on infinite lists?  Why not?
+</p>
+
+<p>
+Indeed, while it may be counter-intuitive, infinite lists can take less room to store than many finite ones, provided the infinite list is based on a <i>generative rule</i>.  In the above example, the original list is based on the rule <code type="inline">X[i] = (i + 1) * 5</code>, where <code type="inline">X[i]</code> is the value at list index <code type="inline">i</code>.  <code type="inline">X[i]</code> can also be expressed in terms of its predecessor: <code type="inline">X[i] = X[i-1] + 5; X[0] = 5</code>.  Using <code type="inline">force</code> and <code type="inline">delay</code>, we can construct a <i>stream</i> of values based on this rule:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 5. Example of a Stream</heading>
+;This is the generative rule for the list. It returns a pair 
+;with the CAR being the next value, and the CDR being a promise 
+;for the next pair
+(define (my-generative-rule last-val)
+        (let (
+              ;generative formula based on previous value
+              (next-val (+ last-val 5)))
+          ;put the next value together with a promise for another one
+          (cons next-val (delay (my-generative-rule next-val)))))
+;Since the CDR is a promise of a pair, rather than a pair itself, 
+;we have our own functions for getting the CAR and CDR.
+(define (mystream-car the-stream) (car the-stream))
+(define (mystream-cdr the-stream) (force (cdr the-stream)))
+
+;Create our list
+(define multiples-of-five (cons 5 (delay (my-generative-rule 5))))
+
+;Display the fourth element of the list
+(display (mystream-car (mystream-cdr (mystream-cdr (mystream-cdr multiples-of-five)))))
+(newline)
+</code>
+
+
+<p>
+Now, remember we wanted to square all of the numbers.  In order to do this, we need to have a function which can create a new stream from existing streams and generative rules -- kind of like <code type="inline">map</code> but for streams.  Here is the function:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 6. A Specialized <code type="inline">map</code> for Streams</heading>
+(define (mystream-map function the-stream)
+  (cons 
+    ;;The first value will be the function applied to the CAR
+    (function (car the-stream)) 
+    ;;The remaining values will be stored in a promise
+    (delay (mystream-map function (mystream-cdr the-stream)))))
+
+(define squared-stream (mystream-map (lambda (x) (* x x)) multiples-of-five))
+
+;Display the fourth element of this new list
+(display (mystream-car (mystream-cdr (mystream-cdr (mystream-cdr squared-stream)))))
+(newline)
+</code>
+
+
+<p>
+Now all that's left to do is to iterate through the stream and print out the values less than 500:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 7. Iterating Through a Stream</heading>
+(let loop (
+           (remaining-stream squared-stream))
+  (if (&gt;= (mystream-car remaining-stream) 500)
+      #f
+      (begin
+        (display (mystream-car remaining-stream))
+        (newline)
+        (loop (mystream-cdr remaining-stream)))))
+</code>
+
+
+<p>
+Obviously, for such a trivial program, there were other ways of approaching the subject more directly.  However, even in this example, streams helped us to view the problem from less of an implementation point of view, and more as an abstract idea.  Streams allowed us to focus on the <i>problem</i> rather than the <i>implementation</i>.  Streams ease both the conceptualization and the implementation of algorithms involving generative elements.
+</p>
+
+<p>
+The streams we have discussed so far are useful for learning the concepts behind streams.  However, the implementation suffers numerous pitfalls.  First of all, there are many occasions where streams may need a terminator.  This implementation doesn't provide that ficility.  Also, the style of streams shown here is known as "odd" streams, and the "odd" style is easy to implement, such streams can lead to more evaluation than is intended since the car of the list is always evaluated. Standard streams, as defined in SRFI-40, take care of these and other issues (see <a href="#references">References</a> for more details).  
+</p>
+
+
+
+<heading refname="" type="major" toc="yes" alttoc="">Skipping Transitional Variables</heading>
+
+<p>
+So far, all of our examples of lazy evaluation have caused the intermediate values to be fully realized before continuing.  Part of this stems from the requirements of the problems we were solving, and part comes from the operation of <code type="inline">delay</code> and <code type="inline">force</code> themselves.  For example, consider the following code:
+</p>
+
+<programlisting>
+(define val1 20)
+(define val2 30)
+(define val3 40)
+(define val4 0)
+(define val5 (delay (* val1 val2)))
+(define val6 (delay (* val4 val3)))
+(define val7 (* (force val5) (force val6)))
+</programlisting>
+
+<p>
+In this case, we know that the answer will be zero, simply because we know that anything times zero is zero.  So, while this would seem like a case where lazy evaluation might be appropriate (we are trying to prevent unnecessary computations), in fact using <code type="inline">delay</code> and <code type="inline">force</code> doesn't help us out.  
+</p>
+
+<p>
+In cases like this, we need specialized lazy algorithms to delay processing in order to <i>not process intermediate results</i>.  Instead, we would need to implement code which would queue up requests.  Then, when the final answer was requested, it could search the queue for values which can help it optimize the process, and then use those values to skip processing of other values.  In the case of multiplication, the presence of a zero could cause it to skip all processing.
+</p>
+
+<p>
+Here is a specialized <code type="inline">delay</code>/<code type="inline">force</code> pair, specialized for multiplication:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 8. Simple Specialized <code type="inline">delay</code>/<code type="inline">force</code> pair</heading>
+;This will simply use a list to keep track of the values to be multiplied
+(define (multiply-delay x y)
+   (let (
+         ;convert to lists if they aren't already
+         (x-list (if (list? x) x (list x)))
+         (y-list (if (list? y) y (list y))))
+     ;append them together
+     (append x-list y-list)))
+(define (multiply-force mul-list)
+  (let (
+        (has-zero? #f))
+    (for-each 
+      (lambda (x) 
+        (if (eqv? 0 x) 
+            (set! has-zero? #f) 
+            #f))
+      mul-list)
+    (if has-zero?
+        0
+        (apply * mul-list))))
+(define a (multiply-delay 23 54))
+(define b (multiply-delay 0 5))
+(define c (multiply-delay a b))
+(define d (multiply-delay c 55)
+(display (multiply-force d))
+(newline)
+</code>
+
+
+<p>
+However, this implementation has problems of its own.  The individual pieces are no longer lazy, and no longer save their values.  We have lost all of the benefits of the original <code type="inline">delay</code> and <code type="inline">force</code> in order to achieve a single optimization.  Therefore, rather than keeping one long list of all the parameters, we need to keep them compartmentalized in individual promises so that we can still have the previous benefits.  What we need is a tag which tells whether or not the value has been computed.  If it has been, there is only one element there which does not need computation.  Otherwise, both the multiplier and the multiplicand will be present.  Here is the new code:
+</p>
+
+<code type="section">
+<heading refname="" type="code" toc="no">Listing 9. Another Specialized Lazy Construct</heading>
+;Unevaluated promises will have the structure ('delayed val1 val2)
+;Evaluated promises will have the structure ('forced result)
+
+;Create an unevaluated promise
+(define (multiply-delay x y)
+   (list 'delayed x y))
+
+;Checks promises (and values) to see if they contain any zeroes
+(define (has-zero promise)
+  (if (pair? promise)
+      (if (eq? (car promise) 'forced)
+          ;check forced value
+          (if (eqv? (cdr promise) 0)
+              #t
+              #f)
+          ;check unforced value
+          (if (or (has-zero (cadr promise)) (has-zero (caddr promise)))
+              #t
+              #f))
+      ;Check scalar value
+      (if (eqv? promise 0)
+          #t
+          #f)))
+
+;Attempts zero optimization, then defaults to regular delay/force behavior
+(define (multiply-force promise)
+  (if (eq? (car promise) 'forced)
+      ;if we've already been forced, return the value
+      (cdr promise)
+      ;otherwise, search for a zero
+      (if (has-zero promise)
+          (begin
+             (set-car! promise 'forced)
+             (set-cdr! promise 0)
+             0)
+          (multiply-force-nonzero promise))))
+   
+;This is for promises which are known to be free of zeroes
+(define (multiply-force-nozero promise)
+  (if (pair? promise)
+      (if (eq? (car promise) 'forced)
+          ;if the promise has been forced, just return the value
+          (cdr promise) 
+          ;otherwise, compute the value, and convert this into a "forced" promise
+          (begin
+            (set-car! promise 'forced)
+            (set-cdr! promise
+              (* 
+                 (multiply-force-nonzero (cadr promise)) 
+                 (multiply-force-nonzero (caddr promise))))
+            ;return the forced value
+            (cdr promise)))
+      ;This is just a number, so return it
+      promise))
+</code>
+      
+
+<p>
+This has all of the beneficial behaviors of regular <code type="inline">delay</code>/<code type="inline">force</code>.  Now, because multiply is a fairly fast operation anyway, this whole operation is probably a waste of time, but it makes for a good example.  This can save a whole lot of time for more expensive operations, especially those which may require context switches or heavy processor usage.
+</p>
+<p>
+One popular usage of this technique is in doing string appends.  Rather than having to allocate new space for every time an append is done, you can simply maintain a list of strings which need to be concatenated.  Then, when the final version of the string is needed, you only have to allocate space for the new string once, rather than once for every append that is done.  This saves several <code type="inline">malloc</code> calls, as well as time copying each string.  
+</p>
+
+
+
+<heading refname="" type="major" toc="yes" alttoc="">Lazy Evaluators</heading>
+<p>
+So far we have focused on lazy constructs within an otherwise non-lazy language.  However, some languages, such as Haskell, have laziness as part of the normal evaluation process.  This is termed <i>lazy evaluation</i>.  No parameter in lazy evaluation is evaluated until it is needed.  The programs essentially start from the end and work backwards.  It figures out what it needs to return, and continues backwards to determine what values are required to do that.  Basically, every function is called with promises to each of the parameters.  When the computation needs a value, it then executes the promise.  Since code is executed only when the value is needed, this is called <i>call-by-need</i>  In traditional programming languages, values are passed instead of promises, which is called <i>call-by-value</i>.
+</p>
+
+<p>
+Call-by-need programming has several advantages.  Streams are implemented automatically.  Unneeded values are never computed.  However, the behavior of lazy programs is often hard to predict.  In call-by-value programs, the evaluation order is very predictable, so any time- or sequence-based computations are relatively easy to implement.  This is much more difficult in lazy languages, where special constructs such as <i>monads</i> are needed to describe explicitly-sequenced events.  All of this also makes interfacing with other languages more difficult.
+</p>
+
+<p>
+There are several languages which do lazy programming by default, including Haskell and Clean.  There are lazy versions of a number of other languages as well, including Scheme, ML, and others.
+</p>
+
+<heading refname="" type="major" toc="yes" alttoc="">Conclusion</heading>
+<p>
+The idea of delaying an evaluation until just before the value is needed can be used to either optimize the speed of a program or to restructure a program into a more intelligible form.  While being very valuable, Lazy programming techniques are not widely implemented or even known about.  Including them in your repertoire of techniques will allow you to identify and respond to situations which can be improved by such techniques.
+</p>
+
+</docbody>
+<related-list>
+</related-list>
+
+<resource-list>
+<ul>
+<li><tt>delay</tt> and <tt>force</tt> are <a href="http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-9.html#%_sec_6.4">described in the R5RS Scheme standard</a>.</li>
+<li>Wadler and Taha have a good discussion of "even" and "odd" streams: <a href="http://citeseer.ist.psu.edu/102172.html">How to add laziness to a strict language without even being odd</a>.</li>
+<li>The standard Scheme streams are defined in <a href="http://srfi.schemers.org/srfi-40/srfi-40.html">SRFI-40</a>.</li>
+<li>Here is <a href="http://okmij.org/ftp/Scheme/virus-flattener.txt">an interesting trick to lazily flatten a nested list</a>.</li>
+<li>You can use lazy techniques for <a href="http://srfi.schemers.org/srfi-13/mail-archive/msg00072.html">appending strings</a> as well.</li>
+<li>Chris Okasaki's <a href="http://www.cs.cmu.edu/~rwh/theses/okasaki.pdf">thesis</a> focused on using lazy evaluation techniques to improve amortized running times of purely functional data structures.  It is also available as a <a href="http://www.amazon.com/exec/obidos/ASIN/0521663504/freeeducation-20/">book</a>.</li>
+<li>If you're interested in how lazy languages are implemented, <a href="http://www.cafepress.com/haskell_books.11651133">this book demonstrates the techniques</a>.</li>
+</ul>
+
+</resource-list>
+
+</dw-article>
+</dw-document>
+
+
+

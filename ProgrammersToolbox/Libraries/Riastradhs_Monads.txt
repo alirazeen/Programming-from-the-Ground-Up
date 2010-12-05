@@ -1,0 +1,78 @@
+<Riastradh> (define (eta x) (list x))    ; Fundamental monad operators for the nondeterministic list monad.
+<sarahbot> #!void
+<Riastradh> (define (extend f l) (apply append (map f l)))
+<sarahbot> #!void
+<Riastradh> ; Now we need their shift & reset operators.
+<Riastradh> (define *meta-continuation*
+<Riastradh>   (lambda (v) (error "No top-level RESET" v)))
+<sarahbot> #!void
+<Riastradh> (define (*abort thunk)
+<Riastradh>   (lambda ()
+<Riastradh> ...er.
+<Riastradh> ))))
+<sarahbot> Error in read-code: error reading from port '#<input-port>': invalid identifier '...er.'. 
+<Riastradh> (define (*abort thunk)
+<yome> ;)
+<Riastradh>   (let ((v (thunk)))
+<Riastradh>     (*meta-continuation* v)))
+<sarahbot> #!void
+<Riastradh> (define (reset thunk)
+<Riastradh>   (let ((mk *meta-continuation*))
+<Riastradh>     (call-with-current-continuation
+<Riastradh>       (lambda (k)
+<Riastradh>         (set! *meta-continuation*
+<Riastradh>               (lambda (v)
+<Riastradh>                 (set! *meta-continuation* mk)
+<Riastradh>                 (k v)))
+<Riastradh>         (*abort thunk)))))
+<sarahbot> #!void
+<Riastradh> (define (shift receiver)
+<Riastradh>   (call-with-current-continuation
+<Riastradh>     (lambda (k)
+<Riastradh>       (*abort (lambda ()
+<Riastradh>                 (receiver (lambda (v)
+<Riastradh>                             (reset (lambda () (k v))))))))))
+<sarahbot> #!void
+<Riastradh> ; Now reflect & reify.
+<Riastradh> (define (reflect meaning)
+<Riastradh>   (shift (lambda (k) (extend k meaning))))
+<sarahbot> #!void
+<Riastradh> (define (reify thunk)
+<Riastradh>   (reset (eta (thunk))))
+<sarahbot> #!void
+<Riastradh> ; Note that these are parameterizable across any ETA & EXTEND.  The example here, because of AMB, uses the nondeterminism/list monad.
+<Riastradh> (define-syntax amb
+<Riastradh>   (syntax-rules ()
+<Riastradh>     ((amb) (reflect '()))
+<Riastradh>     ((amb ?x) ?x)
+<Riastradh>     ((amb ?x ...)
+<Riastradh>      (reflect (append (reify (lambda () ?x)) ...)))))
+<sarahbot> #!void
+<Riastradh> (reify (lambda () (amb 1 2)))
+<sarahbot> Error: attempt to apply non-procedure '(2)'.
+<Riastradh> ; ...hrm?
+<Riastradh> (reset (+ 1 (shift k 5)))
+<sarahbot> Error: undefined variable 'k'.
+<Riastradh> (reset (lambda () (+ 1 (shift (lambda (k) 5)))))
+<sarahbot> 5
+<Riastradh> (reset (lambda () (+ 1 (shift (lambda (k) (k 5))))))
+<sarahbot> 6
+<Riastradh> (eta 5)
+<sarahbot> (5)
+<Riastradh> (extend (lambda (x) (+ x 1)) (eta 5))
+<sarahbot> Error in append: expected type pair, got '6'.
+<Riastradh> (extend (lambda (x) (eta (+ x 1))) (eta 5))
+<sarahbot> (6)
+<Riastradh> ; Oops.
+<Riastradh> (define (reify thunk)
+<Riastradh>   (reset (lambda () (eta (thunk)))))
+<sarahbot> #!void
+<Riastradh> (reify (lambda () (amb 1 2)))
+<sarahbot> (1 2)
+<Riastradh> (reify (lambda () (+ (amb 1 2) 3)))
+<sarahbot> (4 5)
+<johnnyb> ;clap clap clap
+<Riastradh> (reify (lambda ()
+<Riastradh>          (+ 1 (call-with-current-continuation
+<Riastradh>                 (lambda (k)
+<Riastradh>                   (* 10 (amb 3 (k 4))))))))

@@ -1,0 +1,1547 @@
+<?xml version="1.0" ?>
+<!--
+<!DOCTYPE article PUBLIC "-//OASIS//DTD DocBook XML V4.1.2//EN">
+<article>
+-->
+<chapter>
+<title>Memory Management</title>
+
+<!--
+<articleinfo>
+<author>
+<firstname>Jonathan</firstname>
+<surname>Bartlett</surname>
+</author>
+<copyright><year>2004</year><holder>Jonathan Bartlett</holder></copyright>
+</articleinfo>
+-->
+
+<para>
+Memory management is one of the most fundamental areas of computer programming.
+In many scripting languages you don't have to worry about how memory is 
+managed, but that doesn't make memory management any less important.  Knowing
+the abilities and limitations of your memory manager is critical for 
+effective programming.  In most systems languages like C and C++ you have
+to do memory management.  In this chapter you will learn the basics of 
+manual, semi-automatic, and automatic memory management practices.  
+</para>
+
+
+<sect1>
+<title>Why Memory Must be Managed</title>
+
+
+<para>
+Back in the days of assembly language programming on the Apple II, memory
+management was not a huge concern.  You basically had run of the whole system.
+Whatever memory the system had, so did you.  You didn't even have to worry
+about figuring out how much memory it had, since every computer had the same amount.  So,
+if your memory requirements were pretty static, you just chose a memory range
+to use and used it.
+</para>
+
+<para>
+However, even in such a simple computer, you still had issues, especially
+when you may not know how much memory each part of your program was going
+to need.  If you have limitted space and varying memory needs, then you
+need some way to implement the following requirements:
+</para>
+
+<itemizedlist>
+<listitem><para>Determine if you have enough memory to process data</para></listitem>
+<listitem><para>Get a section of memory from the available memory</para></listitem>
+<listitem><para>Return a section of memory back to the pool of available memory so it can be used by other parts of the program or other programs</para></listitem>
+</itemizedlist>
+
+<para>
+The libraries which implement these requirements are called 
+<emphasis>allocators</emphasis> because they are responsible for allocating
+and deallocating memory.  The more dynamic a program is, the 
+more memory management becomes an issue, and the more your choice of memory
+allocator becomes important.  This article will discuss the different 
+methods available to manage memory, their benefits and drawbacks, and what 
+situations they work best in.
+</para>
+
+</sect1>
+
+<sect1>
+<title>C-Style Memory Allocators</title>
+
+<para>
+The C programming language has two functions to fulfill our three requirements:
+</para>
+
+<variablelist>
+<varlistentry>
+<term>malloc</term>
+<listitem><para>
+This allocates a given number of bytes and returns a pointer to them.  Also,
+if there isn't this much memory available, it returns a null pointer.
+</para></listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>free</term>
+<listitem><para>
+This takes a pointer to a segment of memory allocated by malloc, and returns
+it for later use by the program or the operating system (actually, some malloc
+implementations can only return memory back to the program, but not to the
+operating system).
+</para></listitem>
+</varlistentry>
+
+</variablelist>
+
+
+
+<sect2>
+<title>Physical and Virtual Memory</title>
+
+<para>
+To understand how memory gets allocated within your program, you need
+to first understand how memory gets allocated to your program from the
+operating system.  Each process on your computer thinks that it has
+access to all of your physical memory.  Obviously, since you are
+running multiple programs at the same time, each process can't own all
+of the memory.  What happens is that your processes are using
+<emphasis>virtual memory</emphasis>.  Let's say that your program is
+accessing memory address 629, just for an example.  The virtual memory
+system, however, doesn't necessarily have it stored in RAM location
+629.  In fact, it may not even be in RAM - it could even have been
+moved to disk if your physical RAM was full!  Because the addresses
+don't necessarily reflect the physical location where the memory is
+stored, this is called virtual memory.  The operating system maintains
+a table of virtual address to physical address translations so that
+the computer hardware can respond properly to address requests.  And,
+if the address is on disk instead of in RAM, the operating system will
+temporarily halt your process, unload other memory to disk, load in
+the requested memory from disk, and restart your process.  This way,
+each process gets it's own address space to play in, and can access
+more memory than you have physically installed.
+</para>
+
+<para>
+On 32-bit x86 systems, each process can access 4 gigabytes of memory.  Now,
+most people don't have 4GB of memory on their system, even if you include
+swap, must less 4 GB <emphasis>per process</emphasis>.  Therefore, when a 
+process loads, it gets an initial allocation of memory up to a certain
+address, called the <emphasis>system break</emphasis>.  Past that is
+unmapped memory - memory for which no corresponding physical location has
+been assigned either in RAM or on disk.  Therefore, if a process runs out
+of memory from it's initial allocation, it has to request that the operating
+system "map in" more memory (mapping is a mathematical term for one-to-one correspondence - memory is "mapped" when it's virtual address has a 
+corresponding physical location to store it in).
+</para>
+
+<para>
+UNIX-based systems have two basic system calls which map in additional memory:
+</para>
+
+<variablelist>
+
+<varlistentry>
+<term>brk</term>
+<listitem><para>
+brk() is a very simple system call.  Remember the system break - the location
+that is the edge of mapped memory for the process?  brk() simply moves that
+location forward or backward, to add or remove memory to or from the process.
+</para></listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>mmap</term>
+<listitem><para>
+mmap(), or "memory map", is like brk(), but is much more flexible.
+First of all, it can map memory in anywhere, not just at the end of
+the process.  Secondly, not only can it map virtual addresses to
+physical RAM or swap, it can map them to files and file locations, so
+that reading and writing memory addresses will read and write data to
+and from files.  We, however, are only
+concerned with mmap's ability to add mapped RAM to our process.
+munmap() does the reverse of mmap().
+</para></listitem>
+</varlistentry>
+
+</variablelist>
+
+<para>
+As you can see, either brk() or mmap() can be used to add additional virtual
+memory to our processes.  We will use brk() in our examples because it is 
+simpler and more common.
+</para>
+
+
+</sect2>
+
+<sect2>
+<title>Implementing a Simple Allocator</title>
+
+<para> 
+If you've done much C programming, you have probably used
+malloc() and free() quite a bit.  However, you may not have taken the
+time to think about how they might be implemented in your operating
+system.  This section will show you code for a simplistic
+implementation of malloc and free, to help you understand what is
+involved with managing memory.
+</para>
+
+<para>
+To try out these examples, type in all of the code below into a file called <filename>malloc.c</filename>.
+</para>
+
+<!-- FIXME - add Swapping issues with virtual memory -->
+
+
+<!--Processes have to tell the operating system how much memory they
+plan to use, the rest is considered a "black hole" and will cause an
+error if a process tries to access it-->
+<!--malloc has to take care of both managing memory that has been
+mapped in as well as requesting that the operating system map in more
+when necessary.-->
+<!--Memory that is managed by the allocator is often called the
+"heap" - this is different than the "stack", which usually holds local
+variables.-->
+
+<sect3>
+<title>Basic Call Signature</title>
+
+<para> 
+Memory allocation on most operating systems is handled by two simple
+functions:
+</para>
+
+<variablelist>
+
+
+<varlistentry>
+<term><literal>void *malloc(long numbytes)</literal></term>
+<listitem><para>
+Allocate <literal>numbytes</literal> of memory and return a pointer to the first byte.
+</para></listitem>
+</varlistentry>
+
+<varlistentry>
+<term><literal>void free(void *firstbyte)</literal></term>
+<listitem><para>
+Given a pointer that has been returned by a previous malloc, give the space
+that was allocated back to the process' "free space".
+</para></listitem>
+</varlistentry>
+
+</variablelist>
+
+</sect3>
+
+<sect3>
+<title>Initializing Our Allocator</title>
+
+<para>
+<literal>malloc_init</literal> is going to be our function to initialize 
+our memory
+allocator. It does three things: marks our allocator as being
+initialized, finds the last valid memory address on the system, and sets
+up the pointer to the beginning of our managed memory. These
+three variables are global variables:
+</para>
+<programlisting>
+int has_initialized = 0;
+void *managed_memory_start;
+void *last_valid_address;
+</programlisting>
+<para>
+The edge of mapped memory - last valid address - is often known as the
+<emphasis>system break</emphasis> or the <emphasis>current
+break</emphasis>. On many UNIX systems, to find the current system
+break, you use the function sbrk(0). sbrk moves the current system
+break by the number of bytes in its argument, and then returns the new
+system break. Calling it with an argument of 0 simply returns the
+current break. Here is our malloc initialization code, which finds the
+current break and initializes our variables:
+</para>
+
+<programlisting>
+/* Include the sbrk function */ 
+#include &lt;unistd.h&gt; 
+
+void malloc_init()
+{ 
+	/* grab the last valid address from the OS */ 	
+	last_valid_address = sbrk(0);    	
+
+	/* we don't have any memory to manage yet, so 
+	 *just set the beginning to be last_valid_address 
+	 */ 	
+	managed_memory_start = last_valid_address;    	
+
+	/* Okay, we're initialized and ready to go */
+ 	has_initialized = 1;   
+}
+</programlisting>
+
+</sect3>
+
+<sect3>
+<title>Memory Control Blocks</title>
+<para> 
+Now, in order to properly manage memory, we need to be able to track
+what we are allocating and deallocating.  We need to do things like
+mark blocks as unused after "free" has been called on them, and be able
+to locate unused blocks when malloc is called.  Therefore, the start of every
+piece of memory returned by malloc will have this structure at the
+beginning: 
+</para>
+
+<programlisting>
+struct mem_control_block { 
+	int is_available; 
+	int size;
+};
+</programlisting>
+
+<para>
+Now, you might think that this would cause problems for programs
+calling malloc - how do they know about this struct?  The answer is
+that they don't have to know about it - we will hide it by moving the
+pointer past this struct before we return it.  This will make the
+pointer returned point to memory that is not used for any other
+purpose.  That way, from their perspective, all they get is free, open
+memory.  Then, when they pass the pointer back via
+<literal>free()</literal>, we simply back up a few memory bytes to
+find this structure again.
+</para>
+
+</sect3>
+
+<sect3>
+<title>Freeing Memory</title>
+
+<para>
+We're going to talk about freeing before we talk about allocating
+memory because it's simpler.  The only thing we have to do to free 
+memory is to take the pointer we're given, back up 
+<literal>sizeof(struct mem_control_block)</literal> bytes, and
+mark it as available. Here is the code for that:
+</para>
+
+<programlisting>
+void free(void *firstbyte) { 
+	struct mem_control_block *mcb;  
+
+	/* Backup from the given pointer to find the 
+	 * mem_control_block 
+	 */ 
+	mcb = firstbyte - sizeof(struct mem_control_block);   
+	/* Mark the block as being available */ 
+	mcb-&gt;is_available = 1;    
+	/* That's It!  We're done. */ 
+	return;   
+}  
+</programlisting>
+
+<para>
+As you can see, in this allocator, freeing memory is done in constant
+time, using a very simple mechanism.
+</para>
+
+</sect3>
+
+<sect3>
+<title>Allocating Memory</title>
+
+<para>
+Allocating memory is slightly harder.  Here is the outline of
+the algorithm: 
+</para>
+
+<programlisting>
+1. If our allocator has not been initialized, initialize it
+2. Add sizeof(struct mem_control_block) to the size requested 
+3. Start at managed_memory_start
+4. Are we at last_valid address?
+5. If we are:
+   A. We didn't find any existing space that was large enough 
+      - ask the operating system for more and return that
+6. Otherwise:
+   A. Is the current space available (check is_available from 
+      the mem_control_block)?
+   B. If it is:
+      i)   Is it large enough (check "size" from the 
+           mem_control_block)?
+      ii)  If so:
+           a. Mark it as unavailable
+           b. Move past mem_control_block and return the 
+              pointer
+      iii) Otherwise:
+           a. Move forward "size" bytes
+           b. Go back go step 4
+   C. Otherwise:
+      i)   Move forward "size" bytes
+      ii)  Go back to step 4
+</programlisting>
+
+<para>
+We're basically walking through memory using linked pointers looking 
+for open chunks.  Here is the code: 
+</para>
+<programlisting>
+void *malloc(long numbytes) { 
+
+	/* Holds where we are looking in memory */ 
+	void *current_location; 
+
+	/* This is the same as current_location, but cast to a 
+	 * memory_control_block 
+	 */
+	struct mem_control_block *current_location_mcb;  
+
+	/* This is the memory location we will return.  It will 
+	 * be set to 0 until we find something suitable 
+	 */  
+	void *memory_location;  
+
+	/* Initialize if we haven't already done so */
+	if(! has_initialized) 	{ 
+		malloc_init();
+	}
+
+	/* The memory we search for has to include the memory 
+	 * control block, but the user of malloc doesn't need 
+	 * to know this, so we'll just add it in for them. 
+	 */
+	numbytes = numbytes + sizeof(struct mem_control_block);  
+
+	/* Set memory_location to 0 until we find a suitable 
+	 * location 
+	 */
+	memory_location = 0;  
+
+	/* Begin searching at the start of managed memory */ 
+	current_location = managed_memory_start;  
+
+	/* Keep going until we have searched all allocated space */ 
+	while(current_location != last_valid_address) 	
+	{ 
+		/* current_location and current_location_mcb point
+		 * to the same address.  However, current_location_mcb
+		 * is of the correct type so we can use it as a struct.
+		 * current_location is a void pointer so we can use it
+		 * to calculate addresses.
+		 */
+		current_location_mcb = 
+			(struct mem_control_block *)current_location;
+
+		if(current_location_mcb-&gt;is_available)
+		{
+			if(current_location_mcb-&gt;size &gt;= numbytes)
+			{
+				/* Woohoo!  We've found an open, 
+				 * appropriately-size location.  
+				 */
+
+				/* It is no longer available */
+				current_location_mcb-&gt;is_available = 0;
+
+				/* We own it */
+				memory_location = current_location;
+
+				/* Leave the loop */
+				break;
+			}
+		}
+
+		/* If we made it here, it's because the Current memory 
+		 * block not suitable, move to the next one 
+		 */
+		current_location = current_location + 
+			current_location_mcb-&gt;size;
+	}
+
+	/* If we still don't have a valid location, we'll 
+	 * have to ask the operating system for more memory 
+	 */
+	if(! memory_location)
+	{
+		/* Move the program break numbytes further */
+		sbrk(numbytes);
+
+		/* The new memory will be where the last valid 
+		 * address left off 
+		 */
+		memory_location = last_valid_address;
+
+		/* We'll move the last valid address forward 
+		 * numbytes 
+		 */
+		last_valid_address = last_valid_address + numbytes;
+
+		/* We need to initialize the mem_control_block */
+		current_location_mcb = memory_location;
+		current_location_mcb-&gt;is_available = 0;
+		current_location_mcb-&gt;size = numbytes;
+	}
+
+	/* Now, no matter what (well, except for error conditions), 
+	 * memory_location has the address of the memory, including 
+	 * the mem_control_block 
+	 */ 
+
+	/* Move the pointer past the mem_control_block */
+	memory_location = memory_location + sizeof(struct mem_control_block);
+
+	/* Return the pointer */
+	return memory_location;
+ }
+</programlisting>
+<para>
+And that is our memory manager.  Now we just have to build it and get it to run with our programs.
+</para>
+
+</sect3>
+
+<sect3>
+<title>Building the Memory Allocator</title>
+
+<para>
+To build your malloc-compatible allocator (actually, we're missing 
+some functions like <literal>realloc()</literal>, but 
+<literal>malloc()</literal> and <literal>free()</literal> are the
+main ones), run the following
+command:
+</para>
+
+<programlisting>
+gcc -shared -fpic malloc.c -o malloc.so
+</programlisting>
+
+<para>
+This will produce a file named <filename>malloc.so</filename>, which
+is a shared library containing our code.
+</para>
+
+<para>
+On UNIX systems, now use your allocator in place of your
+system <literal>malloc()</literal> by doing:
+</para>
+
+<programlisting>>
+LD_PRELOAD=/path/to/malloc.so
+export LD_PRELOAD
+</programlisting>
+
+<para>
+The <literal>LD_PRELOAD</literal> environment variable causes the
+dynamic linker to load the symbols of the given shared library
+before any executable it loads.  It also gives precedence to the
+symbols in the library specified.  Therefore, any application we
+start from now on in this session will be using our 
+<literal>malloc()</literal> and not the system one. A few applications
+don't use <literal>malloc()</literal>, but they are the exception.  Others,
+which use the other memory-management functions like <literal>realloc()</literal>
+or which make poor assumptions about the internal behavior of <literal>malloc()</literal>
+will likely crash.  The <literal>ash</literal> shell appears to work just fine using
+our new <literal>malloc()</literal>.
+</para>
+
+<para>
+If you want to test to be sure that your <literal>malloc()</literal> is being used, you
+should add calls to <literal>write()</literal> at the entry points of your functions.
+Don't use <literal>printf()</literal>, as there is no guarantee that they will not make
+their own calls to <literal>malloc()</literal>
+</para>
+
+</sect3>
+
+<sect3>
+<title>Shortcomings of our Allocator</title>
+
+<para>
+Our memory manager leaves a lot to be desired, but it is good for
+showing what a memory manager needs to do.  Some of its drawbacks
+include: 
+</para>
+
+<itemizedlist>
+  <listitem><para>Since it operates on the system break (a global variable), it
+cannot coexist with any other allocator or with mmap.</para></listitem>
+  <listitem><para>When allocating memory, in worst-case-scenario it will have to walk across <emphasis>all</emphasis> of a process's
+memory - this may include a lot of memory located on disk as well, which means the operating system will have to spend time moving data to and from the disk.</para></listitem>
+  <listitem><para>There is no graceful handling for out-of-memory errors (malloc
+simply assumes success)</para></listitem>
+  <listitem><para>It does not implement many of the other memory functions, such as
+<literal>realloc()</literal>.</para></listitem>
+  <listitem><para>Due to the fact that <literal>sbrk()</literal> may give back 
+more memory than we ask for, we leak
+some memory at the end of the heap.</para></listitem>
+  <listitem><para>The <literal>is_available</literal> flag uses a full 4 byte word even though it only
+contains 1 bit of information. 
+  </para></listitem>
+  <listitem><para>The allocator is not thread-safe</para></listitem>
+  <listitem><para>The allocator can't coalesce free space into larger blocks</para></listitem>
+  <listitem><para>The allocator's simplistic fitting algorithm leads to a lot of potential memory fragmentation</para></listitem>
+  <listitem><para>I'm sure there's lots of other problems - that's why it's only an example</para></listitem>
+</itemizedlist>
+
+</sect3>
+
+</sect2>
+
+<sect2>
+<title>Other Malloc Implementations</title>
+
+<para>
+There are many implementations of <literal>malloc()</literal>, each with their own
+strengths and weaknesses.  There are a number of tradeoff decisions when you design
+an allocator, including:
+</para>
+
+<itemizedlist>
+  <listitem><para>Speed of allocation</para></listitem>
+  <listitem><para>Speed of deallocation</para></listitem>
+  <listitem><para>Behavior in a threaded environment</para></listitem>
+  <listitem><para>Behavior when memory is close to filling</para></listitem>
+  <listitem><para>Cache locality</para></listitem>
+  <listitem><para>Bookkeeping memory overhead</para></listitem>
+  <listitem><para>Behavior in Virtual Memory Environments</para></listitem>
+  <listitem><para>Small or large objects</para></listitem>
+  <listitem><para>Real-time guarantees</para></listitem>
+</itemizedlist>
+
+<para>
+Each implementation has it's own set of benefits and drawbacks.  In our simple allocator,
+it was very slow in allocation, but very, very fast in deallocation.  Also, because of
+it's poor behavior with virtual memory systems, it works best on large objects.
+</para>
+
+<para>
+There are many other allocators available.  Some of them include:
+</para>
+
+<variablelist>
+
+
+<varlistentry>
+<term>Doug Lea Malloc</term>
+<listitem><para>
+Doug Lea Malloc is actually an entire family of allocators, including
+Doug Lea's original allocator, the GNU libc allocator, and ptmalloc. 
+Doug Lea's allocator has a basic structure much like our version, but
+it incorporates indexes to make searching faster, and has the ability
+to combine multiple unused chunks into one large chunk.  It also enables
+caching to make reuse of recently-freed memory faster.  ptmalloc is
+a version of Doug Lea Malloc that was extended to support multiple threads.
+A paper describing Doug Lea's Malloc implementation is available at 
+<ulink url="http://gee.cs.oswego.edu/dl/html/malloc.html">http://gee.cs.oswego.edu/dl/html/malloc.html</ulink>.
+</para></listitem>
+</varlistentry>
+
+<varlistentry> <term>BSD Malloc</term> <listitem><para> BSD Malloc,
+the implementation that was distributed with 4.2 BSD and is included
+with FreeBSD, is an allocator that allocates objects from pools of
+objects of pre-determined sizes.  It has size classes for
+object sizes which are a power of two minus a constant.  So, if you
+request a object of a given size, it simply allocates in whatever size
+class will fit the object.  This provides for a fast implementation,
+but can waste memory. A paper describing this implementation is
+available at <ulink
+url="http://docs.freebsd.org/44doc/papers/malloc.pdf">http://docs.freebsd.org/44doc/papers/malloc.pdf</ulink>.
+</para></listitem> </varlistentry>
+
+
+<varlistentry>
+<term>Hoard</term>
+<listitem><para>
+Hoard was written with the goal of being very fast in a multithreaded
+environment.  Therefore, it is structured around making the best use
+of locking to keep any process from having to wait to allocate memory.
+It can dramatically speed up multithreaded processes which do a lot
+of allocating and deallocating.  A paper describing this implementation
+is available at <ulink url="ftp://ftp.cs.utexas.edu/pub/emery/papers/asplos2000.pdf">ftp://ftp.cs.utexas.edu/pub/emery/papers/asplos2000.pdf</ulink>.
+</para></listitem>
+</varlistentry>
+
+</variablelist>
+
+<para>
+There are many other allocators available, but these are the most 
+well-known.  In addition, if your program has specific allocation
+needs, you may be well suited to write a custom allocator that matches
+the way your program allocates memory.  However, if you aren't familiar
+with allocator design, this can often create more problems than it
+solves.  For a good introduction to the subject, see Donald Knuth's
+<citetitle>The Art of Computer Programming Volume 1: Fundamental Algorithms</citetitle> 
+in section 2.5, "Dynamic Storage Allocation".  It is a bit dated because
+it doesn't take into account virtual memory environments, but most algorithms
+are based on the ones presented there.
+</para>
+
+<para>
+In C++, you can implement your own allocator on a per-class or per-template
+basis by overloading <literal>operator new()</literal>.  Andrei Alexandrescu's
+<citetitle>Modern C++ Design</citetitle> describes a small object allocator
+in chapter 4, "Small Object Allocation".
+</para>
+</sect2>
+
+<sect2>
+<title>Shortcomings of <literal>malloc()</literal>-based memory management</title>
+
+<para>
+Not only does our memory manager have shortcomings, there are many shortcomings of 
+<literal>malloc()</literal>-based memory management that remain no matter which 
+allocator you use.  Managing memory with <literal>malloc()</literal> can be pretty daunting for programs
+that have long-running storage they need to keep around.  If you have lots of references
+to memory floating around, it is often difficult to know when it should be released.
+Memory whose lifetime is limitted to the current function is fairly easy to manage, but
+for memory that lives beyond that it becomes much more difficult.  Also, many APIs are unclear as to whether the responsibility for memory management lies with the calling program or the called function.
+</para>
+
+<para>
+Because of the problems managing memory, many programs have been written oriented around 
+their memory management rules.  C++'s exception handling makes this task even more
+problematic.  Sometimes it seems that more code is dedicated to managing 
+memory allocation and cleanup than actually accomplishing computational tasks!  Therefore,
+we will examine other alternatives to memory-management.
+</para>
+
+</sect2>
+
+</sect1>
+
+<sect1>
+<title>Semi-automatic Memory Management Strategies</title>
+
+<sect2>
+<title>Reference Counting</title>
+
+<para>
+Reference counting is a memory management technique that is semi-automated,
+meaning that it requires some programmer support, but it does not require
+you to know for sure when an object is no longer in use.  The reference
+counting mechanism does that for you.
+</para>
+
+<para>
+In reference counting, all shared data structures have a field that
+contains the number of "references" currently active to that structure.
+When a procedure is passed a pointer to a data structure, it adds 
+to the reference count.  Basically, you are telling the data structure
+how many locations it is being stored in.  Then, when your procedure
+is finished using it, it decreases the reference count.  When this happens,
+it also checks to see if the count has dropped to zero.  If so, it 
+frees the memory.  
+</para>
+
+<para>
+The advantage to this is that you don't have to follow every path in your
+program that a given data structure may follow.  Each localized reference
+to it simply increases or decreases the count as appropriate.  This prevents
+it from being freed while it is still in use.  However, the programmer has
+to remember to run the reference counting functions whenever he is using
+a reference counted data structure.  Also, built-in functions and third-party
+libraries will not know about or be able to use your reference-counting 
+mechanism.  Reference-counting also has difficulties with structures having
+circular references.
+</para>
+
+<para>
+An example reference counting program might look like this:
+</para>
+
+<example>
+<title>Demonstration of Reference Counting</title>
+<programlisting>
+/* Structure Definitions*/
+
+/* Base structure that holds a refcount */
+struct refcountedstruct 
+{
+	int refcount;
+}
+
+/* All refcounted structures must mirror struct 
+ * refcountedstruct for their first variables 
+ */
+struct mydata 
+{
+	int refcount; /* same as refcountedstruct */
+	int datafield1; /* Fields specific to this struct */
+	int datafield2;
+	/* other declarations would go here as appropriate */
+};
+
+/* Refcount maintenance functions */
+
+/* Increase reference count */
+void REF(void *data)
+{
+	struct refcountedstruct *rstruct;
+	rstruct = (struct refcountedstruct *) data;
+	rstruct->refcount++;
+}
+
+/* Decrease reference count */
+void UNREF(void *data)
+{
+	struct refcountedstruct *rstruct;
+	rstruct = (struct refcountedstruct *) data;
+	rstruct->refcount--;
+
+	/* Free the structure if there are no more users */
+	if(rstruct->refcount == 0)
+	{
+		free(rstruct);
+	}
+}
+
+/* EXAMPLES OF USAGE */
+
+/* Use the functions in code */
+void dosomething(struct mydata *data)
+{
+	REF(data);
+
+	/* Process data */
+
+	/* when we are through */
+	UNREF(data);
+}
+
+struct mydata *globalvar1;
+
+/* Note that in this one, we don't decrease the
+ * refcount since we are maintaining the reference
+ * past the end of the function call through the
+ * global variable
+ */
+void storesomething(struct mydata *data)
+{
+	REF(data)
+
+	globalvar1 = data;
+}
+</programlisting>
+</example>
+
+<para>
+Since reference counting is so simple, most programmers implement it
+themselves rather than using libraries.  They do, however, depend
+on low-level allocators like <literal>malloc</literal> and 
+<literal>free</literal> to actually allocate and release their memory.
+</para>
+
+<para>
+Reference counting is used quite a bit in high-level languages
+like Perl to do memory management.  In those languages, the reference
+counting is handled automatically by the language, so that the
+programmer doesn't have to worry about it at all except for writing
+extension modules.  This takes away some speed as everything must be
+reference counted, but adds quite a bit of safety and ease of
+programming.
+</para>
+
+<para>
+The benefits of using reference counting are:
+</para>
+
+<itemizedlist>
+<listitem><para>It has a simple implementation.</para></listitem>
+<listitem><para>It is easy for a programmer to use.</para></listitem>
+<listitem><para>Since the reference is part of the data structure, it has good cache locality.</para></listitem>
+</itemizedlist>
+
+<para>
+However, it also has its drawbacks:
+</para>
+
+<itemizedlist>
+<listitem><para>Requires that the programmer never forget to call the reference counting functions.</para></listitem>
+<listitem><para>Will not release structures that are a part of a circular data structure.</para></listitem>
+<listitem><para>Additional precautions have to be taken when using exception-handling (like <literal>try</literal> or <literal>setjmp()</literal>/<literal>longjmp()</literal>) while using reference counted objects.</para></listitem>
+<listitem><para>Requires extra memory to handle the references.</para></listitem>
+<listitem><para>The reference counter takes up the first position in the structure, which is the fastest to access on most machines.</para></listitem>
+<listitem><para>Slower and more difficult to do in a multithreaded environment.</para></listitem>
+</itemizedlist>
+
+<para>
+C++ can mitigate some of the programmer error by using 
+<emphasis>smart pointers</emphasis>, which can handle pointer-handling
+details like reference counting for you.  However, if you have to use
+any legacy code that can't handle your smart pointers (i.e. - linkage to
+a C library), it usually degenerates into a mess that is actually more
+difficult and twisted than if you didn't use them.  Therefore, it is
+usually only useful for C++-only projects.  If you want to use smart
+pointers, you really need to read the "Smart Pointers" chapter from
+Alexandrescu's <citetitle>Modern C++ Design</citetitle> book.  Luckily,
+it is also available online at <ulink url="http://www.informit.com/content/index.asp?product_id=%7B7CBDD5B1-129D-427A-9C36-9C506D3DFABA%7D">http://www.informit.com/content/index.asp?product_id=%7B7CBDD5B1-129D-427A-9C36-9C506D3DFABA%7D</ulink>.
+</para>
+
+</sect2>
+
+<sect2>
+<title>Memory Pools</title>
+
+<para>
+Memory pools are another method to semi-automate memory management.
+Memory pools help automate memory management for programs that go
+through specific stages, each of which has memory that is allocated
+for only specific stages of processing.  For example, many network
+server processes have lots of per-connection memory allocated - memory
+whose maximum lifespan is the life of the current connection.  Apache,
+which uses pooled memory, has it's connections broken down into stages,
+each of which have their own memory pool.  At the end of the stage, the
+entire memory pool is freed at once.
+</para>
+
+<para>
+In pooled memory management, each allocation specifies a pool of memory
+from which it should be allocated.  Each pool has a different lifespan.
+In apache, there is a pool that lasts the lifetime of the server, one
+that lasts the lifetime of the connection, one that lasts the lifetime
+of the requests, as well as others.  Therefore, if I have a series of
+functions that will not generate any data that lasts longer than the
+connection, I can just allocate it all from the connection pool, knowing
+that at the end of the connection it will be freed automatically.  
+Additionally, some implementations allow registering 
+<emphasis>cleanup functions</emphasis> which get called right before
+the memory pool is cleared, to do any additional tasks which need to
+be performed before the memory is cleared (similar to destructors, for
+you object-oriented folks).
+</para>
+
+<para>
+To use pools in your own programs, you can either use GNU libc's 
+<emphasis>obstack</emphasis> implementation or Apache's 
+<emphasis>Apache Portable Runtime</emphasis>.  GNU obstacks are nice
+because they are included by default in GNU-based Linux distributions.  The 
+Apache Portable Runtime is nice because it has a lot of other utilities
+to handle all aspects of writing multiplatform server software.  To learn
+more about GNU obstacks, see 
+<ulink url="http://www.gnu.org/manual/glibc-2.2.5/html_node/Obstacks.html#Obstacks">http://www.gnu.org/manual/glibc-2.2.5/html_node/Obstacks.html#Obstacks</ulink>.  
+To learn more about Apache's pooled memory implementation, see 
+<ulink url="http://apr.apache.org/docs/apr/group__apr__pools.html">http://apr.apache.org/docs/apr/group__apr__pools.html</ulink>.
+</para>
+
+<para>
+The following is a sample hypothetical code listing using obstacks.  It
+should give you an idea about how they are used:
+</para>
+
+<example>
+<title>Demonstration of Obstacks</title>
+<programlisting>
+#include &lt;obstack.h&gt;
+#include &lt;stdlib.h&gt;
+
+/* Example code listing for using obstacks */
+
+/* Used for obstack macros (xmalloc is 
+   a malloc function that exits if memory
+   is exhausted */
+#define obstack_chunk_alloc xmalloc
+#define obstack_chunk_free free
+
+/* Pools */
+
+/* Only permanent allocations should go in this pool */
+struct obstack *global_pool;
+
+/* This pool is for per-connection data */
+struct obstack *connection_pool;
+
+/* This pool is for per-request data */
+struct obstack *request_pool;
+
+void allocation_failed()
+{
+	exit(1);
+}
+
+int main()
+{
+	/* Initialize Pools */
+	global_pool = (struct obstack *) 
+		xmalloc (sizeof (struct obstack));
+	obstack_init(global_pool);
+
+	connection_pool = (struct obstack *) 
+		xmalloc (sizeof (struct obstack));
+	obstack_init(connection_pool);
+
+	request_pool = (struct obstack *) 
+		xmalloc (sizeof (struct obstack));
+	obstack_init(request_pool);
+
+	/* Set the error handling function */
+	obstack_alloc_failed_handler = &amp;allocation_failed;
+
+	/* Server main loop */
+	while(1)
+	{
+		wait_for_connection();
+		
+		/* We are in a connection */
+		while(more_requests_available())
+		{
+			/* Handle request */
+			handle_request();
+
+			/* Free all of the memory allocated 
+			 * in the request pool 
+			 */
+			obstack_free(request_pool, NULL);
+		}
+
+		/* We're finished with the connection, time 
+		 * to free that pool 
+		 */
+		obstack_free(connection_pool, NULL);
+	}
+}
+
+int handle_request()
+{
+	/* Be sure that all object allocations are allocated
+	 * from the request pool
+	 */
+
+	int bytes_i_need = 400;
+	void *data1 = obstack_alloc(request_pool, bytes_i_need);
+
+	/* Do stuff to process the request */
+
+	/* return */
+	return 0;
+}
+</programlisting>
+</example>
+
+<para>
+Basically, after each major stage of operation, the obstack for that
+stage is freed.  Note, however, that if a procedure needs to allocate 
+memory that will last longer than the current stage, they can use a
+longer-term obstack as well, such as the connection or the global one.
+The <literal>NULL</literal> that is passed to 
+<literal>obstack_free()</literal> indicates that it should free the entire
+contents of the obstack.  Other values are available, but they usually are
+not as useful.
+</para>
+
+<para>
+Benefits of using pooled memory allocation include:
+</para>
+
+<itemizedlist>
+<listitem><para>Simple to manage memory for the application.</para></listitem>
+<listitem><para>Memory allocation and deallocation is much faster, because it is all done a pool at a time.  Allocation can be done in O(1) time and pool release is close (it's actually O(n) time, but divided by a huge factor that makes it O(1) in most cases).</para></listitem>
+<listitem><para>Error-handling pools can be preallocated, so that your program can still recover if regular memory is exhausted.</para></listitem>
+<listitem><para>There are standard implementations which are very easy to use.</para></listitem>
+</itemizedlist>
+
+<para>
+The drawbacks for pooled memory are:
+</para>
+
+<itemizedlist>
+<listitem><para>Memory pools are only useful for programs that operate in stages.</para></listitem>
+<listitem><para>Memory pools often do not work well with third-party libraries.</para></listitem>
+<listitem><para>If program structure changes, the pools may have to be modified, which may lead to a redesign of the memory management system.</para></listitem>
+<listitem><para>Programmers have to remember which pool they need to allocate from.  In addition, if they get this wrong, it can be hard to catch.</para></listitem>
+</itemizedlist>
+
+</sect2>
+
+</sect1>
+
+<sect1>
+<title>Garbage Collection</title>
+
+<para>
+Garbage collection is the fully automatic detection and removal of data
+objects that are no longer in use. They are usually run when
+the available memory drops below a specific threshold. Generally,
+they start off with a "base" set of data that is known to be available
+to the program - stack data, global variables, and registers. They
+then try to trace through every piece of data linked through those.
+Everything it finds is good data, everything that it doesn't find
+is garbage and can be destroyed and reused. Many types of garbage
+collectors require knowledge of the layout of pointers within data
+structures to manage memory effectively, and therefore have to 
+be a part of the language itself to function properly.
+</para>
+
+<sect2>
+<title>Types of Collectors</title>
+
+<variablelist>
+
+<varlistentry>
+<term>Copying</term>
+<listitem><para>
+Divides memory storage into two parts. Only allows data to
+live on one side. Periodically, starts copying data from one side
+to the other starting with "base" elements. This section of memory
+now becomes active and everything on the other side is considered
+garbage.  Also, when this copying occurs, all of the pointers have
+to be updated to point to the new location of each memory item.  
+Therefore, to use this method of garbage collection the collector
+must be integrated with the programming language.
+</para></listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>Mark and Sweep</term>
+<listitem><para>
+Each piece of data is marked with a tag. Occasionally, all
+tags are set to 0, and the collector walks through the data starting
+with "base" elements. As it encounters memory, it marks the tag as
+1. Everything not tagged 1 at the end is considered garbage and
+re-used for later allocations.
+</para></listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>Incremental</term>
+<listitem><para>
+Incremental garbage collectors do not require a full run through all
+data objects. Running through all of memory causes problems both
+because of the "all-at-once" wait during the collection period and the
+cache problems associated with accessing all current data (everything
+has to be paged-in). Incremental collectors avoid these problems.
+</para></listitem>
+</varlistentry>
+
+
+<varlistentry>
+<term>Conservative</term>
+<listitem><para>
+Conservative garbage collectors do not need to know anything about
+the structure of your data to manage memory. They simply look at
+all data bytes, and assume they <emphasis>could</emphasis> all be pointers.
+So, if a sequence of bytes could be a pointer to a piece of allocated
+memory, it marks it as being referenced.  This sometimes leads to problems
+where memory which isn't referenced is collected if, for example, an 
+integer field contained a value which was the address of allocated memory.
+However, this is a fairly rare occurrence, and only wastes a little memory.
+Conservative collectors have the advantage that they can be integrated
+with any programming language.
+</para></listitem>
+</varlistentry>
+
+</variablelist>
+
+<para>
+Hans Boehm's conservative garbage collector is one of
+the most popular garbage collectors available, because it's free and
+it's both conservative and incremental.  You can use it as a drop-in 
+replacement
+for your system allocator (using malloc/free instead of it's own API) by
+building it with <literal>--enable-redirect-malloc</literal>. In fact, 
+if you do this, you can use the same <literal>LD_PRELOAD</literal> trick that
+we used for our simple allocator to enable garbage collection in almost any 
+program on your system.  If you suspect a program is leaking memory, you 
+can use this garbage collector to keep the process size down.  Many people
+used this technique in the early days of Mozilla when it leaked memory
+heavily.  This garbage collector runs under both Windows and UNIX.
+</para>
+
+<para>
+The benefits of garbage collection include:
+</para>
+
+<itemizedlist>
+<listitem><para>You never have to worry about double-freeing memory or object lifetimes</para></listitem>
+<listitem><para>You can, with some collectors, use the same API that you used for normal allocation</para></listitem>
+</itemizedlist>
+
+<para>
+The drawbacks include:
+</para>
+
+<itemizedlist>
+<listitem><para>With most collectors, you have no say when your memory is going to be freed</para></listitem>
+<listitem><para>In many cases, garbage collection is slower than other forms of memory management</para></listitem>
+<listitem><para>Bugs caused by garbage collection errors are hard to debug</para></listitem>
+<listitem><para>You can still have memory leaks if you forget to set unused pointers to null</para></listitem>
+</itemizedlist>
+
+</sect2>
+
+</sect1>
+
+<sect1>
+<title>Comparison of Strategies</title>
+
+<table frame="all">
+<title>Comparison of Memory Allocation Strategies</title>
+<tgroup cols="8" align="left" colsep="1" rowsep="1">
+<colspec colname="c1" />
+<colspec colname="c2" />
+<colspec colname="c3" />
+<colspec colname="c4" />
+<colspec colname="c5" />
+<colspec colname="c6" />
+<colspec colname="c7" />
+<colspec colname="c8" />
+<thead>
+<row>
+      <entry>Strategy</entry>
+      <entry>Allocation Speed</entry>
+      <entry>Deallocation Speed</entry>
+      <entry>Cache Locality</entry>
+      <entry>Ease of Use</entry>
+      <entry>Generality</entry>
+      <entry>Usable in Real-Time</entry>
+      <entry>SMP and Thread-Friendly </entry>
+</row>
+</thead>
+<tbody>
+    <row>
+      <entry>Custom Allocator 
+      </entry>
+      <entry>Depends on Impl 
+      </entry>
+      <entry>Depends on Impl 
+      </entry>
+      <entry>Depends on Impl 
+      </entry>
+      <entry>Very Difficult 
+      </entry>
+      <entry>None 
+      </entry>
+      <entry>Depends on Impl 
+      </entry>
+      <entry>Depends on Impl 
+      </entry>
+    </row>
+    <row>
+      <entry>Simple Allocator</entry>
+      <entry>Fast for small memory usage</entry>
+      <entry>Very fast</entry>
+      <entry>Poor 
+      </entry>
+      <entry>Easy 
+      </entry>
+      <entry>Very 
+      </entry>
+      <entry>No 
+      </entry>
+      <entry>No 
+      </entry>
+    </row>
+    <row>
+      <entry>GNU Malloc 
+      </entry>
+      <entry>Moderate 
+      </entry>
+      <entry>Fast 
+      </entry>
+      <entry>Moderate 
+      </entry>
+      <entry>Easy 
+      </entry>
+      <entry>Very 
+      </entry>
+      <entry>No 
+      </entry>
+      <entry>Moderate</entry>
+    </row>
+    <row>
+      <entry>Hoard 
+      </entry>
+      <entry>Moderate 
+      </entry>
+      <entry>Moderate 
+      </entry>
+      <entry>Moderate 
+      </entry>
+      <entry>Easy 
+      </entry>
+      <entry>Very 
+      </entry>
+      <entry>No 
+      </entry>
+      <entry>Yes 
+      </entry>
+    </row>
+    <row>
+      <entry>Reference Counting 
+      </entry>
+      <entry>N/A 
+      </entry>
+      <entry>N/A 
+      </entry>
+      <entry>Excellent 
+      </entry>
+      <entry>Moderate 
+      </entry>
+      <entry>Moderate 
+      </entry>
+      <entry>Yes (depends on malloc impl) 
+      </entry>
+      <entry>Depends on Impl 
+      </entry>
+    </row>
+    <row>
+      <entry>Pooling 
+      </entry>
+      <entry>Moderate 
+      </entry>
+      <entry>Very fast 
+      </entry>
+      <entry>Excellent 
+      </entry>
+      <entry>Moderate 
+      </entry>
+      <entry>Moderate 
+      </entry>
+      <entry>Yes (depends on malloc impl) 
+      </entry>
+      <entry>Depends on Impl 
+      </entry>
+    </row>
+    <row>
+      <entry>Garbage Collection 
+      </entry>
+      <entry>Moderate (slow when collection
+occurs) 
+      </entry>
+      <entry>Moderate 
+      </entry>
+      <entry>Poor 
+      </entry>
+      <entry>Moderate 
+      </entry>
+      <entry>Moderate 
+      </entry>
+      <entry>No 
+      </entry>
+      <entry>Rarely 
+      </entry>
+    </row>
+    <row>
+      <entry>Incremental Garbage Collection 
+      </entry>
+      <entry>Moderate 
+      </entry>
+      <entry>Moderate 
+      </entry>
+      <entry>Moderate 
+      </entry>
+      <entry>Moderate 
+      </entry>
+      <entry>Moderate 
+      </entry>
+      <entry>No 
+      </entry>
+      <entry>Rarely 
+      </entry>
+    </row>
+    <row>
+      <entry>Incremental Conservative Garbage
+Collection 
+      </entry>
+      <entry>Moderate 
+      </entry>
+      <entry>Moderate 
+      </entry>
+      <entry>Moderate 
+      </entry>
+      <entry>Easy 
+      </entry>
+      <entry>Very 
+      </entry>
+      <entry>No 
+      </entry>
+      <entry>Rarely</entry>
+    </row>
+  </tbody>
+  </tgroup>
+</table>
+
+<para>
+The remaining chapters of this book will assume that there is some sort
+of automatic memory management technique in place, whether it is integrated
+into your programming language or is a separate add-on tool.
+</para>
+
+</sect1>
+
+<!--
+
+<sect1>
+<title>Additional Information</title>
+
+ <h3>Source Code for Memory Allocators, Debuggers, and Garbage Collectors</h3>
+<h4>Basic Allocators</h4>
+<itemizedlist>
+  <listitem>The Simple Allocator - <a
+ href="../packages/MemoryManagement/basic-allocators/simple/simple_malloc.c">simple_malloc.c</a>
+or <a
+ href="../packages/MemoryManagement/basic-allocators/simple/alloc.s">alloc.s</a> 
+  </listitem>
+  <listitem>Doug Lea's Malloc - <a
+ href="../packages/MemoryManagement/basic-allocators/doug-lea-malloc/malloc.c">malloc.c</a>,<a
+ href="../packages/MemoryManagement/basic-allocators/doug-lea-malloc/malloc.h">malloc.h</a></listitem>
+  <listitem>BSD Malloc - <a
+ href="../packages/MemoryManagement/basic-allocators/BSD/malloc.c">malloc.c</a></listitem>
+  <listitem>ptmalloc - <a
+ href="../packages/MemoryManagement/basic-allocators/ptmalloc/ptmalloc.tar.gz">ptmalloc
+version 1 (.tar.gz)</a>, <a
+ href="../packages/MemoryManagement/basic-allocators/ptmalloc/ptmalloc2-current.tar.gz">ptmalloc
+version 2 (.tar.gz)</a></listitem>
+  <listitem>Hoard - <a
+ href="../packages/MemoryManagement/basic-allocators/hoard/libhoard-source-2.1.0.tar.gz">libhoard-source-2.1.0.tar.gz</a>,<a
+ href="../packages/MemoryManagement/basic-allocators/hoard/libhoard-source-2.1.0.zip">libhoard-source-2.1.0.zip</a>,<a
+ href="../packages/MemoryManagement/basic-allocators/hoard/libhoard-2.1.0-windows.zip">libhoard-2.1.0-windows.zip</a>,<a
+ href="../packages/MemoryManagement/basic-allocators/hoard/libhoard-2.1.0-linux.tar.gz">libhoard-2.1.0-linux.tar.gz</a>,<a
+ href="../packages/MemoryManagement/basic-allocators/hoard/libhoard-2.1.0-solaris.tar.gz">
+libhoard-2.1.0-solaris.tar.gz</a></listitem>
+  <listitem>GNU Memory-Mapped Malloc - <a
+ href="../packages/MemoryManagement/basic-allocators/gnu-mmalloc/mmalloc.tar.gz">mmalloc.tar.gz</a>
+(Part of the <a
+ href="../packages/MemoryManagement/basic-allocators/gnu-mmalloc/gdb-5.3.tar.bz2">GNU
+Debugger</a>)</listitem>
+  <listitem>University of Toronto Malloc - <a
+ href="../packages/MemoryManagement/basic-allocators/UTorontoMalloc/UToronto-malloc.tar.gz">UToronto-malloc.tar.gz</a> 
+  </listitem>
+  <listitem>ElectricFence Malloc Debugger - <a
+ href="../packages/MemoryManagement/basic-allocators/ElectricFence/ElectricFence-2.1.tar.gz">ElectricFence-2.1.tar.gz</a> 
+  </listitem>
+</itemizedlist>
+<h4>Pooled Allocators</h4>
+<itemizedlist>
+  <listitem>Apache's pooled allocator - <a
+ href="../packages/MemoryManagement/pooled-allocators/apache-allocator/alloc.c">alloc.c</a>
+(from Apache 1.3.27), &nbsp;<a
+ href="../packages/MemoryManagement/pooled-allocators/apache-allocator/apr_pools.c">apr_pools.c</a>
+(from the <a
+ href="../packages/MemoryManagement/pooled-allocators/apache-allocator/apr_20030224174002.tar.gz">Apache
+Portable Runtime</a>)</listitem>
+  <listitem>Squid's pooled allocator - <a
+ href="../packages/MemoryManagement/pooled-allocators/squid-allocator/MemPool.c">MemPool.c</a></listitem>
+  <listitem>NetBSD's pooled allocator - <a
+ href="../packages/MemoryManagement/pooled-allocators/netbsd-pooled-allocator/subr_pool.c">subr_pool.c</a></listitem>
+  <listitem>Samba's pooled allocator - <a
+ href="../packages/MemoryManagement/pooled-allocators/samba-allocator/talloc.c">talloc.c</a> 
+  </listitem>
+</itemizedlist>
+<h4>C++ Smart Pointers &amp; Custom Allocator</h4>
+<itemizedlist>
+  <listitem>Loki C++ Library - <a href="../packages/Loki.zip">Loki.zip 
+    </a></listitem>
+</itemizedlist>
+<h4>Garbage Collectors</h4>
+<itemizedlist>
+  <listitem>Hahns Boehm Conservative Garbage Collector - <a
+ href="../packages/MemoryManagement/collectors/gc6.1.tar.gz">gc6.1.tar.gz</a></listitem>
+</itemizedlist>
+<h3>Readings</h3>
+<h4>Print 
+</h4>
+<itemizedlist>
+  <listitem>Section 2.5, "Dynamic Storage Allocation" from Fundamental Algorithms, volume 1 of The Art of Computer Programming by Donald Knuth</listitem>
+  <listitem>Section 2.3.5, "Lists and Garbage Collection" from Fundamental Algorithms, volume 1 of The Art of Computer Programming by Donald Knuth</listitem>
+  <listitem>Chapter 4, "Small Object Allocation" from Modern C++ Design by Andrei Alexandrescu</listitem>
+  <listitem>Chapter 7, "Smart Pointers" from Modern C++ Design by Andrei Alexandrescu</listitem>
+</itemizedlist>
+<h4>Electronic Papers</h4>
+<h5>General</h5>
+<itemizedlist>
+  <listitem>"Correctness in Dynamic Storage Allocation" by Grunwald and Zorn
+(WEB) - <a
+ href="http://www.cs.colorado.edu/%7Ezorn/malloc/Usenix94-Correct-DSA.ps">Postscript</a></listitem>
+  <listitem>"Predicting Lifetimes in Dynamically Allocated Memory" by Cohn
+and Singh (WEB) - <a href="http://www.cs.cmu.edu/%7Ecohn/memory.ps">Postscript</a></listitem>
+</itemizedlist>
+<h5>Virtual Memory in Modern Operating Systems</h5>
+<itemizedlist>
+  <listitem>"A New Virtual Memory Implementation for Berkeley UNIX" by
+Marshall Kirk McKusick and Michael J. Karels - <a
+ href="../packages/MemoryManagement/papers/newvm.pdf">PDF</a></listitem>
+  <listitem>"Code Commentary on the Linux Virtual Memory Manager" by Mel
+Gorman - <a href="../packages/MemoryManagement/papers/linux-vm-code.pdf">PDF</a></listitem>
+  <listitem>"Understanding the Linux Virtual Memory Manager" by Mel Gorman - <a
+ href="../packages/MemoryManagement/papers/linux-vm-understand.pdf">PDF</a> 
+  </listitem>
+</itemizedlist>
+<h5>Malloc Implementations</h5>
+<itemizedlist>
+  <listitem>"Malloc in Modern Virtual Memory Environments" by Poul-Henning
+Kamp - <a href="../packages/MemoryManagement/papers/malloc.pdf">PDF</a></listitem>
+  <listitem>"Hoard - a Scalable Memory Allocator for Multithreaded
+Environments" by Berger, McKinley, Blumofe, and Wilson (WEB) - <a
+ href="ftp://ftp.cs.utexas.edu/pub/emery/papers/asplos2000.pdf">PDF</a></listitem>
+  <listitem>Chapter 8 (Intermediate Memory Topics) from Programming From the
+Ground Up (unpublished draft)- <a
+ href="../packages/MemoryManagement/papers/ProgrammingGroundUp.pdf">PDF</a></listitem>
+  <listitem>"Design of a General Purpose Memory Allocator for the 4.3BSD UNIX
+Kernel" by Marshall Kirk McKusick and Michael J. Karels - <a
+ href="../packages/MemoryManagement/papers/kernmalloc.pdf">PDF</a> 
+  </listitem>
+  <listitem>"A Memory Allocator" by Doug Lea - <a
+ href="../packages/MemoryManagement/papers/malloc-discussion.html">HTML</a>
+and <a href="../packages/MemoryManagement/papers/malloc-discussion.pdf">PDF</a></listitem>
+  <listitem>"Memory Management for High-Performance Applications" by Emery D.
+Berger (WEB) - <a
+ href="http://www.cs.utexas.edu/ftp/pub/techreports/tr02-52.pdf">PDF</a></listitem>
+</itemizedlist>
+<h5>Custom Allocators</h5>
+<itemizedlist>
+  <listitem>"Some Storage Management Techniques for Container Classes" by
+Doug Lea - <a
+ href="../packages/MemoryManagement/papers/C++Report89-doug-lea.txt">Text</a></listitem>
+  <listitem>"Composing High-Performance Memory Allocators" by Berger, Zorn,
+and McKinley (WEB) - <a
+ href="ftp://ftp.cs.utexas.edu/pub/emery/papers/pldi2001.pdf">PDF</a></listitem>
+  <listitem>"Reconsidering Custom Memory Allocation" by Berger, Zorn, and
+McKinley (WEB) - <a
+ href="ftp://ftp.cs.utexas.edu/pub/emery/papers/reconsidering-custom.pdf">PDF</a></listitem>
+</itemizedlist>
+<h5>Garbage Collection</h5>
+<itemizedlist>
+  <listitem>"Uniprocessor Garbage Collection Techniques" by Paul R. Wilson
+(WEB) - <a
+ href="http://citeseer.nj.nec.com/rd/88809344%2C89086%2C1%2C0.25%2CDownload/http://citeseer.nj.nec.com/cache/papers/cs/5548/http:zSzzSzwww.mbhl.comzSz%7EdhudekzSz.zSzdocszSzgcSurvey.pdf/wilson92uniprocessor.pdf">PDF</a></listitem>
+  <listitem>"The Measured Cost of Garbage Collection" by Benjamin Zorn (WEB)
+- <a
+ href="http://citeseer.nj.nec.com/rd/88809344%2C31007%2C1%2C0.25%2CDownload/http://citeseer.nj.nec.com/cache/papers/cs/632/ftp:zSzzSzftp.cs.colorado.eduzSzpubzSztechreportszSzzornzSzCU-CS-573-92.pdf/zorn92measured.pdf">PDF</a></listitem>
+  <listitem>"Memory Allocation Myths and Half-Truths" by Hans-Juergen Boehm
+(WEB) - <a href="http://www.hpl.hp.com/personal/Hans_Boehm/gc/myths.ps">Postscript</a></listitem>
+  <listitem>"Space Efficient Conservative Garbage Collection" by Hans-Juergen
+Boehm (WEB) - <a
+ href="http://www.hpl.hp.com/personal/Hans_Boehm/gc/papers/pldi93.ps.Z">Compressed
+Postscript</a></listitem>
+  <listitem>"Garbage Collection in .NET" by Chris Maunder (WEB) - <a
+ href="http://www.codeproject.com/managedcpp/garbage_collection.asp">HTML</a> 
+  </listitem>
+</itemizedlist>
+<h4>Resources on the Web</h4>
+<itemizedlist>
+  <listitem>Malloc Debuggers - <a
+ href="http://www.cs.colorado.edu/%7Ezorn/MallocDebug.html">http://www.cs.colorado.edu/~zorn/MallocDebug.html</a></listitem>
+  <listitem>Memory Management in C++ - <a
+ href="http://www.cantrip.org/wave12.html">http://www.cantrip.org/wave12.html</a></listitem>
+  <listitem>Programming Alternatives: Memory Management - <a
+ href="http://www.conman.org/projects/essays/memmgr.html">http://www.conman.org/projects/essays/memmgr.html</a></listitem>
+  <listitem>Garbage Collection FAQ - <a
+ href="http://www.iecc.com/gclist/GC-faq.html">http://www.iecc.com/gclist/GC-faq.html</a></listitem>
+  <listitem>Richard Jone's Garbage Collection Bibliography - <a
+ href="http://www.cs.ukc.ac.uk/people/staff/rej/gcbib/gcbibG.html">http://www.cs.ukc.ac.uk/people/staff/rej/gcbib/gcbibG.html</a> 
+  </listitem>
+  <listitem>Garbage Collection in .NET - <a
+ href="http://msdn.microsoft.com/msdnmag/issues/1100/GCI/default.aspx">http://msdn.microsoft.com/msdnmag/issues/1100/GCI/default.aspx</a> 
+  </listitem>
+</itemizedlist>
+
+
+</sect1>
+-->
+
+<!--</article>-->
+</chapter>
+

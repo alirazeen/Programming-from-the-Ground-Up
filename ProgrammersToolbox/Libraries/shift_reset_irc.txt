@@ -1,0 +1,94 @@
+<yome> Give me a minute.
+<Riastradh> ; In explaining shift & reset to jemfinch, I also made little ASCII art animations of the stack, just to show how stuff moves about on it; would you like me to construct those?
+<Riastradh> ; (well, not really ASCII art)
+<yome> No it's fine. I'm pretty sure I get it.
+<Riastradh> ; Despite their seemingly completely arcane control theory basis, SHIFT & RESET are actually very useful, or variations of them are.
+<Riastradh> ; For example, look at Oleg's code to 'invert' an enumerator into a stream.
+<Riastradh> ; It can be found at <http://okmij.org/ftp/Scheme/enumerators-callcc.html>.
+<Riastradh> ; Notice how horribly confusing that code is.
+<Riastradh> ; It could instead be written quite simply with SHIFT & RESET.
+<Riastradh> ; Given a procedure to apply its first argument to every 'element' of its second argument, whatever that second argument is, we can trivially construct a stream-like device:
+<Riastradh> (define (walker->streamer walk)
+<Riastradh>   (lambda (collection)
+<Riastradh>     (reset
+<Riastradh>       (lambda ()
+<Riastradh>         (walk (lambda (elt)
+<Riastradh>                 (shift (lambda (k)
+<Riastradh>                          (cons elt (lambda () (k 'ignored))))))
+<Riastradh>               collection)
+<Riastradh>         '()))))
+<sarahbot> #!void
+<Riastradh> ; As an example, here is a list enumerator, FOR-EACH, inverted:
+<Riastradh> (define list->pseudo-stream (walker->streamer for-each))
+<sarahbot> #!void
+<Riastradh> (list->pseudo-stream '(a b c d e))
+<sarahbot> #0=(a . #<procedure>)
+<Riastradh> ((cdr !))
+<sarahbot> (b . #<procedure>)
+<Riastradh> ((cdr !))
+<sarahbot> (c . #<procedure>)
+<Riastradh> ((cdr !))
+<sarahbot> (d . #<procedure>)
+<Riastradh> ((cdr !))
+<sarahbot> (e . #<procedure>)
+<Riastradh> ((cdr !))
+<sarahbot> ()
+<yome> Wow that's pretty sweet.
+<Riastradh> ; Indeed.
+<Riastradh> ; SHIFT & RESET do have problems, however.
+<Riastradh> ; Suppose Alice writes a higher-order function that does some
+stuff, delimits the stack with RESET, does some more stuff, and then calls its
+function argument.
+<Riastradh> ; What if Bob delimits the stack with his _own_ RESET and calls
+Alice's function with a function that will try to use SHIFT to abort back to
+Bob's RESET?
+<yome> I can see the "reset mark" as being some global shared state...
+<Riastradh> ; Problem: Alice's mark will interfere.
+<Riastradh> ; But this is easy to fix, if you make stack markers first-class.
+<yome> So it there a way to name reset marks?
+<yome> ok
+<Riastradh> ; We'd now have three operators, which I'll name much more
+descriptively:
+<Riastradh> ; Four operators, rather.
+<Riastradh> ; Well, five, for a full interface, but the fifth is just for
+convenience.
+<Riastradh> ;    - (MAKE-CONTINUATION-DELIMITER) - Constructs a fresh
+continuation delimiter.
+<Riastradh> ;   - (CONTINUATION-DELIMITER? <object>) - Continuation delimiter
+predicate.  (This is what I called 'the fifth.')
+<Riastradh> ;   - (WITH-DELIMITED-CONTINUATION <delimiter> <thunk>) - Delimits
+the stack with DELIMITER and calls THUNK.
+<Riastradh> ; (WITH-DELIMITED-CONTINUATION was previously called RESET, and
+DELIMITER was implicit (because there was no distinction between delimiters).)
+<Riastradh> ;   - (CALL-WITH-CONTINUATION-DELIMITER <receiver>) - Delimits the
+stack with a fresh continuation delimiter and calls RECEIVER with that
+delimiter.
+<Riastradh> ; ((CALL-WITH-CONTINUATION-DELIMITER <receiver>) is equivalent to
+(let ((delimiter (make-continuation-delimiter))) (with-delimited-continuation
+delimiter (lambda () (receiver delimiter)))).)
+<Riastradh> ;   - (REIFY-PARTIAL-CONTINUATION <delimiter> <receiver>) -
+Reifies a slice of the stack down from the top of the stack to where the stack
+is marked with DELIMITER and applies RECEIVER to an object representing that
+stack slice.
+<Riastradh> ; (REIFY-PARTIAL-CONTINUATION is just SHIFT with an explicit
+delimiter.)
+<Riastradh> ; I didn't specify exactly what REIFY-PARTIAL-CONTINUATION's
+RECEIVER argument is, to allow for, for example, it being a continuation as in
+Feeley's continuation ADT.
+<yome> Are those five operators your "creation" ?
+<Riastradh> Sort of.
+<Riastradh> ; Actually, Queinnec & Moreau had an interesting idea that I
+didn't think of; I always thought of the analogue of SHIFT as immediately
+aborting to the delimiter.
+<johnnyb> Seems it would be nice to have some sort of research index that just
+pointed you to the recent developments in various programming fields.
+* forcer grins.
+<Riastradh> ; But Queinnec & Moreau's CALL/PC (what I call REIFY-PC) _doesn't_
+do that; you do it explicitly, when you want to.
+<Riastradh> ; So you can perform some actions before the abort, such as
+capturing a _full_ continuation.
+<Riastradh> ; I haven't put much thought into the utility and implications of
+this, though, which is why I didn't describe a sixth operator,
+ABORT-TO-CONTINUATION-DELIMITER.
+<Riastradh> ; (Which would make continuation delimiters essentially serve a
+dual purpose of upward-/escape-only continuations.)

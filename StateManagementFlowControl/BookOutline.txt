@@ -1,0 +1,104 @@
+Programming Language Concepts:
+Tools for State Management and Flow Control
+
+-- discuss how state management and flow control are the fundamental problems
+being addressed in programming languages (find lesser ones, like maybe
+interoperability)
+
+-- discuss why good state management tools are needed in large projects
+
+-- we are developing a language, but the language features can also
+   be used by assembly language programs for enhanced state management
+   and flow control
+
+-- discuss runtime vs compile-time constructs, how they affect speed,
+implementation, flexibility, etc.
+
+You may have learned a few programming languages by now, all of which have
+a great number of features that simplify programming.  This is excellent.
+Maximizing productivity in programming is about knowing your tools and
+knowing how they work.  Knowing a programming language is good, but you
+will never master it until you learn how it is implemented.
+
+This book will go over a piece-by-piece dissection of the programming
+language scheme.  Scheme was chosen for this book because of several reasons:
+
+* It has a really simple syntax
+
+* It only has a few facilities
+
+* Those few facilities can be used to implement almost every other programming construct in popular use
+
+-------
+
+-- State Management --
+
+State Management - state is a collection of values
+
+ -- anatomy of values
+
+ -- a generic value structure
+
+ -- lifecycle of values
+
+ -- basic values -- string and integer
+
+ -- using our values
+
+State Management - keeping track of variables
+
+ -- symbol table
+
+ -- scopes
+
+ -- Using lists to keep track of symbols
+
+ -- pairs and lists
+
+ -- Symbol table implementation
+
+ -- Stack frames, scope, and symbol tables
+
+ -- Using the symbol table in a program
+
+ -- Discussion of runtime vs. compile-time symbol tables
+
+State Management - putting it together - standardized function template and
+call frames
+
+State Management - closures - saving symbol tables for later use
+
+State Management - The Function Type
+  -- code pointer
+  -- closure
+
+-- Building the Interpretter --
+
+-- Flow Control  --
+
+Basic elements
+
+ -- Sequence, Selection, and Iteration
+    (sequence is actually any non-flow-control statement)
+
+Flow Control - Function calls ??
+
+Flow Control - Continuations - remembering flow control
+
+Flow Control - error exits, exceptions, etc
+
+Flow Control - Coroutines
+
+Flow Control - Threads and processes
+
+-- State Management in object-oriented languages --
+
+OO Concepts
+
+OO is just a simplified closure mechanism
+
+Implementing OO in scheme
+
+Other OO method dispatch techniques
+
+

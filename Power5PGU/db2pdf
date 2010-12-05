@@ -1,0 +1,19 @@
+#!/bin/sh
+
+echo "Jon's shell script -- not the real thing"
+
+XMLFILE="$1"
+BASE=`echo "$1"|cut -f 1 -d .`
+echo "***** Base filename is $BASE *****"
+echo "***** Jade Processing *****"
+openjade -t tex -d programming.dsl#printdraft /sw/share/sgml/openjade-1.3.2/pubtext/xml.dcl "$XMLFILE"
+echo "***** TeX Processing *****"
+pdfjadetex "${BASE}.tex"
+pdfjadetex "${BASE}.tex"
+pdfjadetex "${BASE}.tex"
+
+echo "***** Cleanup *****"
+rm "${BASE}.aux"
+rm "${BASE}.log"
+rm "${BASE}.out"
+rm "${BASE}.tex" 

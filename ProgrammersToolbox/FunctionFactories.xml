@@ -1,0 +1,1136 @@
+<?xml version="1.0" ?>
+<!DOCTYPE chapter PUBLIC "-//OASIS//DTD DocBook XML V4.1.2//EN">
+<chapter>
+<title>Higher Order Functions</title>
+<subtitle>Taking functions as arguments, function-generating functions, and anonymous functions</subtitle>
+
+<para>
+Functions are a wonderful and powerful building block of computer
+programs.  Functions allow us to break our code down into simpler,
+more manageable steps.  They also allow us to break our programs into
+reusable parts -- parts that are both reusable within the program and
+often in other programs as well.  This article will teach you to create
+new functions at runtime based on templates, and will teach you to create
+functions that are configurable at runtime using function parameters.
+</para>
+
+<para>
+Examples in this article will use the Scheme programming language and C.  An introduction to the Scheme programming language can be found in <ulink url="http://www.ibm.com/developerworks/linux/library/l-listproc/">a previous artilce</ulink>.  Links to other Scheme introductions and Scheme function references are provided in the <ulink url="#Resources">Resources</ulink> section of this article.
+</para>
+
+<sect1>
+<title>Creating Anonymous Functions</title>
+
+<para>
+In Scheme, functions are created by default without names.  The <emphasis>lambda</emphasis> special form creates a nameless function and then returns the value to the enclosing form or function call.  The enclosing form may:
+</para>
+
+<itemizedlist>
+<listitem><para>Set a symbol to refer to the value (thus giving it a name)</para></listitem>
+<listitem><para>Store the value in a data structure for later use</para></listitem>
+<listitem><para>Pass the value as a parameter to a function</para></listitem>
+</itemizedlist>
+
+<para> In most programming languages, defining functions and naming
+them occur simultaneously.  The fact that these operations are
+separate in Scheme leads to a lot of confusion to new Scheme
+programmers.  Scheme's method is actually very simple, because Scheme
+treats functions just as it would other values.  Functions are created
+with <literal>lambda</literal>.  Just like other values, these
+functions can be passed as arguments, stored into variables, or stored
+as a part of a larger data structure.  To make a Scheme function
+created with <literal>lambda</literal> act like a function from other
+languages, we need only to store it in a global variable.  This makes
+the function visible to other functions and accessible by name.
+</para>
+
+<!-- FIXME - slowdown previous paragraph, too much information too quickly -->
+
+<para>
+Here is an example of an anonymous function in Scheme that squares the number given to it:
+</para>
+
+<example>
+<title>A nameless function</title>
+<programlisting>
+(lambda (x)
+	(* x x)
+)
+</programlisting>
+</example>
+
+<para>
+This code defines a function with one formal parameter, <literal>x</literal>.  The function squares the parameter and returns the value.  Remember, Scheme doesn't need explicit return values.  Scheme simply returns the result of the last form evaluated in the function.
+</para>
+
+<para>
+Let's continue by giving the function a name:
+</para>
+
+<example>
+<title>Naming a function</title>
+<programlisting>
+(define square 
+	(lambda (x) 
+		(* x x)))
+
+(display (square 3))
+(newline)
+(display (square 4))
+(newline)
+</programlisting>
+</example>
+
+<para>
+This is the simplest and most common way of dealing with functions -- giving them a name and then using them in computation later on.  However, there is no rule in Scheme that forces us to give a function a name before using it.  In Scheme, the head of a list in a program must result in a function or a special form, but that doesn't mean it has to be the <emphasis>name</emphasis> of a function.  Because the <literal>lambda</literal> special form returns functions, we can actually use a <literal>lambda</literal> function definition directly in a function call.  For example, instead of writing <literal>(square 4)</literal>, we can also write <literal>( (lambda (x) (* x x)) 4)</literal>.  This is a two-element list, in which the first element is the definition of the function and the second element is a number.  The head of this list is the function definition itself.  When it runs, it first evaluates everything within the list.  The <literal>lambda</literal> form evaluates to a function definition, which, because it is the head of the list, is called on the second element.  The return value of this form is the square of the number 4.
+</para>
+
+<para>
+Defining and calling functions immediately, rather than naming them or passing them as values, is an interesting concept, but not extremely useful.  However, it does illustrate the idea of functions as values and shows how anonymous functions work.
+</para>
+
+</sect1>
+
+<sect1>
+<title>Functions as Function Arguments</title>
+
+<para>
+A practical use of nameless functions is that of building functions to
+pass as arguments to other functions.  The best example of this is the
+Scheme built-in function <literal>map</literal>.
+<literal>Map</literal> takes two arguments, a function of one
+variable and a list. It then applies that function to each element of
+the list and returns a new list made up of the results.  For example,
+using our square function, we can take a list of numbers and square
+them:
+</para>
+
+<example>
+<title>Passing functions as arguments to functions</title>
+<programlisting>
+;Our function
+(define square (lambda (x) (* x x)))
+
+;Our data
+(define my-test-data '(1 2 3 4 5 6))
+
+;Create a new list as the squares of my-test-data
+(define list-of-squares (map square my-test-data))
+
+;Display results
+(display list-of-squares)
+(newline)
+</programlisting>
+</example>
+
+<para>
+This is a pretty concise program compared to other languages.
+For example, in C the equivalent code would look like this:
+</para>
+
+<example>
+<title>Passing functions as arguments to functions in C</title>
+<programlisting>
+int square(int x)
+{
+	return x * x;
+}
+
+int main()
+{
+	int my_test_data[6] = {1, 2, 3, 4, 5, 6};;
+	int list_of_squares[6];
+	int i;
+
+	/* Note that this would only work if C had a function
+	 * called map which worked with integer functions.
+	 * It doesn't, so this is largely theoretical.  Also remember
+	 * that C doesn't know the size of the arrays, so we have to
+	 * pass it explicitly.  Also, list_of_squares has to be passed
+	 * as a parameter in C.
+	 */
+	map(square, my_test_data, list_of_squares, 6);
+
+	printf("(");
+	for(i=0; i<6; i++)
+	{
+		printf("%d ", list_of_squares[i]);
+	}
+	printf(")\n");
+}
+</programlisting>
+</example>
+
+<para>
+Of course, in C, unless we use a type-tag mechanism like the one
+mentioned <ulink
+url="http://www.ibm.com/developerworks/linux/library/l-listproc/">in
+this article</ulink>, we will need a different function for every type
+of value used with <literal>map</literal>.
+</para>
+
+<para>
+In addition to being more concise than C, coding such a function in
+Scheme has an additional advantage - the naming of the function
+<literal>square</literal> is not needed.  In Scheme, because functions
+can be created and passed just like any other value, the core of the
+code can be modified so that we don't even have to give our squaring
+function a name.  We can just define it and pass it to
+<literal>map</literal>.  In the place of the variable name
+<literal>square</literal>, we will instead have the definition of the
+function written as a <literal>lambda</literal> form.  Here is the
+code:
+</para>
+
+<example>
+<title>Passing anonymous functions as values</title>
+<programlisting>
+(define list-of-squares (map (lambda (x) (* x x)) '(1 2 3 4 5 6)))
+(display list-of-squares)
+(newline)
+</programlisting>
+</example>
+
+<para>
+So why do it this way?  Well, anonymous functions have several advantages over named functions when the function is only used once:
+</para>
+
+<itemizedlist>
+<listitem><para>The program namespace isn't polluted with a lot of functions that are only used once.</para></listitem>
+<listitem><para>The code for the function is located in the exact spot where it is used; therefore programmers don't have to go hunting for the code of tiny, one-use functions.</para></listitem>
+<listitem><para>The function is clearly associated with the function it's being passed to; therefore it is obvious to other programmers what context it is being used in.  If a one-use function is written separate from the calling function, if the calling function is later removed it won't be obvious that the one-use function would need to be removed as well.</para></listitem>
+</itemizedlist>
+
+<para>
+In short, using anonymous functions makes the code concise and easy to follow  and makes it obvious to other programmers when a function is specialized for one, specific use.
+</para>
+
+<para>
+Also, as seen from the <literal>map</literal> function, passing
+functions as arguments allows us more control over what happens to our
+data downstream.  In this instance, the <literal>map</literal>
+function iterated through each value in the list and then
+<emphasis>used our function</emphasis> to manage further processing of
+that list value.  This allows function writers and users great flexibility.
+We can create a function that allows the users of that function
+to plug in extra functionality by passing functions as arguments.
+</para>
+
+<para>
+In addition to <literal>map</literal>, there are several other generic
+list-processing functions that take functions as parameters.  These
+functions, or ones like them, are the backbone of any data processing
+application.  Using these generic functions takes a lot of the
+repetitiveness out of programming; otherwise we are left to code loops
+after loops that all essentially work the same way.  Not only do we
+save time, we also have fewer opportunities to introduce bugs. The
+most common of these generic list-processing functions are:
+</para>
+
+<variablelist>
+
+<varlistentry>
+<term>map</term>
+<listitem><para>
+<literal>map</literal> takes a list and generates a new list by applying a user-supplied function to each list member.
+</para></listitem>
+</varlistentry>
+
+<varlistentry>
+<term>filter</term>
+<listitem><para>
+<literal>filter</literal> takes a list and generates a new list containing the members of the old list that match a user-specified condition.
+</para></listitem>
+</varlistentry>
+
+<varlistentry>
+<term>reduce</term>
+<listitem><para>
+<literal>reduce</literal> takes a list and combines the values into a single value.  This combining procedure can be summation, min-value, max-value, etc.  In order to use this correctly, we need to use closures which will be discussed shortly.
+</para></listitem>
+</varlistentry>
+
+</variablelist>
+
+<para>
+There are several other generic list-processing functions, but these
+are the basic ones that are easiest to learn and most widely used.
+</para>
+
+<para>
+Detailed descriptions of these functions are available through the links found in the <ulink url="#Resources">Resources</ulink> section.
+</para>
+
+</sect1>
+
+<sect1>
+<title>Using Functions as Arguments</title>
+
+<para>
+We've seen how to pass functions as arguments to other functions.  Now
+we turn to writing functions of our own that take functions as
+parameters.
+</para>
+
+<para>
+New programmers often have trouble seeing places where passing
+functions as arguments would be useful.  In many programs, there will
+be one or two instances of what is basically the same algorithm coded
+multiple times, but with slight variations.  These are perfect
+candidates for functions as arguments.  What we can do is code the
+basic structure of the algorithm into one function.  Then, we can
+take the pieces that vary and add them back in as function parameters.
+This allows a great amount of customization within the function.  We
+can also add extra function parameters for future expansion.  Combining
+functions like this removes redundancy from our programs, and by extension
+reduces the errors that come from re-coding the same algorithm over and over
+within a program.
+</para>
+
+<para>
+Suppose we have an order-processing algorithm composed of
+several parts:
+</para>
+
+<itemizedlist>
+<listitem><para>Process each line of the order and add up the total.</para></listitem>
+<listitem><para>Calculate shipping on the order.</para></listitem>
+<listitem><para>Validate the credit line of the purchaser.</para></listitem>
+<listitem><para>If successful, charge the order, send an order confirmation, and record it in the database.</para></listitem>
+</itemizedlist>
+
+<para>
+Now lets say that different customers have different types of shipping
+to calculate, have their credit line calculated differently, and are
+charged differently for each order.  For example, shipping might be
+calculated through a different service provider depending on the
+client.  The credit line might be checked through our own business on
+some customers, or through the credit-card company on others.
+Order charging might vary depending on whether the client was
+normally billed, charged through their credit card, or performs
+automatic withdrawal.  Different customers may have different 
+processing needs for each of these stages.
+</para>
+
+<!-- FIXME - mh thinks the above paragraph needs expansion -->
+
+<para>
+One way to code such a function would be to simply hardcode all of the
+possible pathways in our order-processing algorithm directly.  Then,
+the call to this function would include a list of flags indicating
+which style of processing was requested.  However, as the number of
+different possibilities got larger, the order-processing algorithm
+would get unwieldy.  Another way to code the function is to have these stages
+handled by independent functions passed to the algorithm.  This way,
+the order-processing algorithm needs to have only the general flow of
+the algorithm coded directly.  The specifics of each major stage would
+be handled by functions passed in.
+</para>
+
+<para>
+Such an algorithm would need to have parameters for the
+shipping-calculation function, the credit-validation function, and the
+order-charging function.  Here is a function in Scheme that encodes
+such an algorithm:
+</para>
+
+<example>
+<title>Using functions as arguments in order processing</title>
+<programlisting>
+(define process-order 
+	;;The function has one data record for the order and three functions as parameters
+	(lambda (order ship-calc-func credit-validate-func charge-order-func)
+		(let
+			(
+				;;Here we execute functions to get the fields
+				;;from the order that we will need for later
+				;;processing
+				(order-lines (get-order-lines order))
+				(origin (get-origin-address order))
+				(destination (get-destination-address order))
+				(delivery-time (get-delivery-time order))
+				(customer-email (get-customer-email order))
+
+				;;These values will be calculated when we
+				;;process the order
+				(weight 0.0)
+				(subtotal 0.0)
+				(total 0.0)
+				(shipping 0.0)
+				(tax 0.0))
+			;;Iterate through each order line, running a function on each line
+			;;to add the weight and price to the weight and price of the order
+			(for-each
+				;;Note that anonymous functions created within a function
+				;;have full access to the enclosing function's variables
+				(lambda (order-line)
+					(set! weight (+ weight (get-weight order-line)))
+					(set! subtotal (+ total (get-price order-line))))
+				order-lines)
+
+			;;This uses our shipping calculation function that was passed as a parameter.
+			;;Remember, this could be any number of things, such as calculating from
+			;;a shipping provider's remote database, calculating based on static 
+			;;customer-specific tables, or any other method we wish.
+			(set! shipping (ship-calc-func weight origin destination delivery-time))
+
+			;;For this exercise, tax will be considered fairly uniform, so we didn't pass
+			;;a tax-calculating function
+			(set! tax (calculate-tax destination subtotal))
+
+			;;Now record the total
+			(set! total (+ subtotal shipping tax))
+
+			;;Validate the user's credit line, according to the validation parameter
+			(if (credit-validate-func total)
+				(begin
+					;;Charge the order according to the validation parameter
+					(charge-order-func total)
+					(send-confirmation customer-email order-lines shipping tax total)
+					(mark-as-charged order))
+				(begin
+					;;Cancel the order
+					(send-failure-message customer-email)
+					(mark-as-failed order))))))
+</programlisting>
+</example>
+
+<para>
+Parameters that are functions are passed just like any other
+parameter, the only difference being their use within the program.
+This technique allows us to have the algorithm code the general flow
+of control, but still have the specifics of the processing
+parameterized.  Many programmers who do not know this technique either
+have lots of flags that control the processing.  That's not a bad idea
+for a few simple variations in processing, but it starts to get
+unwieldy as the number of differences grows.  It is difficult to determine
+the point at which passing functions as parameters is more beneficial
+than having special cases and/or flags control the processing in a function.
+There are, however, some guidelines.
+</para>
+
+<itemizedlist>
+<listitem><para>When the options are few and specific, special-casing is often the better method.</para></listitem>
+<listitem><para>When the options are so closely tied to the algorithm that it takes several functions 
+using most of the algorithm's local variables to generate the desired options, special-casing is probably the better method.</para></listitem>
+<listitem><para>When each option needs completely different sets of variables to determine the answer, special-casing is probably the better method.</para></listitem>
+<listitem><para>When the options are many, or if new options are anticipated, functions as parameters is often the better method.</para></listitem>
+<listitem><para>When the options are very clear and logically separate from the code, functions as parameters is often the better method.</para></listitem>
+</itemizedlist>
+
+<para>
+The C language can also have functions passed as parameters, but
+writing a parameter specification for a function in C is a little
+confusing.  C is statically typed -- that is, types are checked at 
+compile-time -- 
+while Scheme is not.  Therefore, declaring a variable or parameter as
+holding a function requires that we also specify what types of
+parameters that function takes.  For example, let's take a look at how
+we might code the <literal>map</literal> function mentioned earlier.
+That function needed to take as a parameter a function of one integer
+that also returns an integer.  The prototype of our
+<literal>square</literal> function looked like this: 
+<literal>int square(int x)</literal>.  Therefore, to declare a
+variable that holds a pointer to such a function,
+we would write the following code:
+</para>
+
+<example>
+<title>Variable declaration for a function pointer in C</title>
+<programlisting>
+/* This creates a variable called "the_function" which we can store 
+ * pointers to functions
+ */
+int (*the_function)(int);
+</programlisting>
+</example>
+
+<para> The first <literal>int</literal> indicates that the return
+value is an integer.  Then, in parenthesis, we have the pointer
+notation and the name of the variable.  In another set of parentheses
+after the function name is a comma-separated list of the types of
+arguments the function takes.  </para>
+
+<para> Assigning and using functions is actually very straightforward
+because <emphasis>all</emphasis> functions in C are actually function
+pointers.  </para>
+
+<example>
+<title>Operations on function pointers in C</title>
+<programlisting>
+int main()
+{
+	/* Declare function pointer */
+	int (*the_function)(int);
+
+	/* assign function pointer */
+	the_function = square;
+
+	/* call function */
+	printf("The square of 2 is %d\n", the_function(2));
+
+	return 0;
+}
+</programlisting>
+</example>
+
+<para> 
+Using this knowledge about function pointers in C, we can
+easily implement a version of Scheme's <literal>map</literal> function
+in C.  However, our version will be much more limited because it will
+be handling only integers and integer arrays instead of
+<emphasis>any</emphasis> type of data and linked lists, as it would in
+Scheme.  
+</para>
+
+<example>
+<title>Implementation of the map function in C</title>
+<programlisting>
+void map(int (*mapping_function)(int), int src[], int dst[], int count)
+{
+	int i;
+	for(i = 0; i < count; i++)
+	{
+		dst[i] = mapping_function(src[i]);
+	}
+}
+</programlisting>
+</example>
+
+<para>
+For an even more general approach, we could use the type-tag mechanism mentioned in <ulink url="http://www.ibm.com/developerworks/linux/library/l-listproc/">this article</ulink>,
+and have the mapping function, the source array, and the destination array all be of type <literal>data</literal>.
+</para>
+
+<para> When third-party libraries are used, functions passed to the
+library as arguments are usually called <emphasis>callback
+functions</emphasis>.  This is because they are used to "call back"
+into the programmer's custom code from the library.  This allows the
+library writers to write very generic functions which can then call
+back to the programmer's code for more specific processing.  With
+callback functions, the library can be extended by the programmer
+without having to directly modify the source code.  For example, most
+GUI toolbox API's use callback functions for event handling.  Callback
+functions are passed to the GUI API, which are then stored until the
+user triggers them with events such as mouse clicks and button pushes.
+The GUI API certainly doesn't know what actions the program needs to 
+take in response to these events so it simply uses the callback functions provided by the calling program to direct the course of action.
+</para>
+
+</sect1>
+<!-- FIXME - stopped editting here -->
+<!-- FIXME - perhaps I need to code reduce as an example of building functions at runtime -->
+<sect1>
+<title>Building Functions at Runtime</title>
+<!-- FIXME - just changed the title, so need to go through and make sure the section matches its new name -->
+
+<para>
+Now, having covered functions that can be passed as parameters, we're going to go
+a step further and discuss functions that can be <emphasis>created</emphasis> according to a programmer-defined template.
+</para>
+
+<para> In Scheme, <literal>lambda</literal> creates a function.
+However, functions in Scheme are "bigger" concepts than in many other
+languages.  To understand the difference, it is first necessary to
+understand how Scheme views variables.  In Scheme, variables are
+grouped together in <emphasis>environments</emphasis>, of which there
+are two kinds - the local environment and the global environment.  The
+global environment consists of all of the global variables of a
+function, and Scheme handles the global environment essentially the
+same as most other programming languages.  In addition to the global
+environment, Scheme has numerous local environments.  A local
+environment is the collection of local variables and formal parameters
+that are visible at a given point in the program.  But the local
+environment is more than just the names of the variables - it's also
+the storage/values they refer to.  Unlike local environments in other
+programming languages, local environments in Scheme can be saved for
+later use.  </para>
+
+<para> So how do we save a local environment, and what does that have
+to do with functions?  Well, in Scheme, when a function is defined, if
+it is defined within a local environment, that local environment
+permanently attaches itself to the function definition.  Therefore,
+the function has access to all of the variables that were active and
+in scope when the function was created, even if the function that
+created those variables has since returned.  Let's look at some
+examples of functions with attached local environments:
+</para>
+
+<example>
+<title>Examples of functions declared within local environments</title>
+<programlisting>
+;Environment test is a function taking one argument.  It will then return
+;a function which remembers that argument
+(define make-echo-function
+	(lambda (x)
+		;The local environment now consists of "x"
+
+		;Create a function which takes no parameters and return it
+		(lambda ()
+			;This function returns the x defined in the enclosing
+			;local environment
+			x)))
+
+(define echo1 (make-echo-function 1))
+
+(display (echo1)) ;should display 1
+(newline)
+
+(define echo2 (make-echo-function 2))
+
+(display (echo2)) ;should display 2
+(newline)
+
+(display (echo1)) ;should display 1
+(newline)
+</programlisting>
+</example>
+
+<para> First of all, notice that <literal>echo1</literal> and
+<literal>echo2</literal> are <emphasis>functions</emphasis>.  Now,
+<literal>echo1</literal> always gives back 1, even though it is not
+using any global variables and is not being passed any parameters.
+That's because when we create a function, the local environment is
+saved.  In this case, the local environment consists of
+<literal>x</literal>.  Therefore, unlike functions in languages like C,
+the variables created on each call of
+<literal>make-echo-function</literal> survive even past the point
+where <literal>make-echo-function</literal> ends!  As long as the
+function returned from <literal>make-echo-function</literal> survives,
+the local environment will survive, too.  In fact, when we define
+<literal>echo2</literal>, we now have two different local environments
+for <literal>make-echo-function</literal> that remain active.  The
+variable names are the same, but the values in those variables are
+different.  The computer knows which value to use because the
+environment is tied to the function when it is created by
+<literal>lambda</literal>.  This strange fusion of environments and
+functions is called a <emphasis>closure</emphasis>.  </para>
+
+<para>
+Let's look at a slightly more complicated closure.  We will
+create a function that starts at a given number, and then, every time
+it is called, returns one number higher.
+</para>
+
+<example>
+<title>Number counter program to illustrate function-generating functions</title>
+<programlisting>
+(define make-counter
+	(lambda (curval)
+		(lambda ()
+			(set! curval (+ curval 1))
+			curval)))
+
+(define my-counter (make-counter 0))
+
+(display (my-counter)) ;writes 1
+(newline)
+
+(display (my-counter)) ;writes 2
+(newline)
+
+(define my-other-counter (make-counter 25))
+
+(display (my-other-counter)) ;writes 26
+(newline)
+
+(display (my-counter)) ;writes 3
+(newline)
+
+(display (my-other-counter)) ;writes 27
+(newline)
+</programlisting>
+</example>
+
+<para> These types of functions can be useful for creating functions
+that maintain state from call to call.  Combined with function
+parameters, this is a powerful technique for programming.  We can make
+the functions passed as parameters even more powerful because Scheme
+closures allow us to ship pieces of state (the local environment) with
+the function.  In programming languages such as C, any state that
+might be used in a function passed as an argument would either need to
+exist in a global variable or would need to be passed explicitly.  The
+point of having a function parameter within a procedure is to extend
+it beyond what was originally envisioned by the programmer.  But if we
+have to explicitly pass all data we want used in our function, then we
+have defeated its purpose already.  We will discuss a solution to this
+problem later, but even then the solution isn't nearly as elegant as 
+using closures in Scheme to attach a local environment to a function.
+</para>
+
+<para>
+When we put a function definition within an environment, what we are doing in essence
+is creating a template for a function.  Every time the <literal>lambda</literal> 
+form is evaluated, the template is used to create a new function using the current
+local environment to fill in the unknown slots.
+</para>
+
+<para> Callback functions make closures quite handy.  The person who
+writes the API that we use rarely knows anything about the type of
+data that we are handling.  Therefore, the writer doesn't know what
+kind of data needs to be passed to our callback function to make it
+work.  With closures, we can pack all of the data we want directly
+into a callback function.  Let's say, for instance, that an API wants
+a callback function of no parameters when it builds a button that will
+be called every time that button is pushed.  That might seem
+problematic, especially if we have multiple buttons sharing a
+callback function.  If the API isn't passing any data, how will
+we know which button was pushed?  With closures, we can define our
+callback function within an environment containing any information
+needed to make the callback effective. The API which calls receives
+and calls the callback doesn't need to know about any of it - it 
+just looks like a normal function to the API.
+</para>
+
+<para> We can also use closures to create functions that create
+specialized versions of other functions.  Let's say we have a function
+called <literal>filter-evens</literal> that takes a list and returns
+all even numbers from that list.  The function might look like this:
+</para>
+
+<example>
+<title>Filtering even numbers from a list</title>
+<programlisting>
+(define filter-evens
+	(lambda (the-list)
+		(let
+			(
+				;This will hold the filtered elements
+				(new-list '()))
+			;Cycle through the elements
+			(for-each
+				(lambda (entry)
+					;if it's even, add it to new-list
+					(if (even? entry)
+						(set! new-list (cons entry new-list))))
+				the-list)
+			;return new-list (note that this will be in
+			;reverse order that the items were in the
+			;original list)
+			new-list)))
+
+(display (filter-evens '(1 2 3 4 5 6 7 8 9))) ;should display (8 6 4 2)
+(newline)
+</programlisting>
+</example>
+
+<para> Notice first that the function we define and pass to
+<literal>for-each</literal> is used as a closure.
+<literal>new-list</literal> is defined in the enclosing environment.
+<literal>new-list</literal> is going to be a different value each time
+<literal>filter-evens</literal> is called, but we will need that same
+value for each iteration of <literal>for-each</literal> in order to
+build the list.  </para>
+
+<para> Filtering even numbers is a nice exercise, but if we want to
+filter for something else - like odd numbers, numbers below 20, or
+even filter on non-numeric lists (such as all addresses in the state
+of Oklahoma) we will basically have to re-code the algorithm even
+though each instance of the filtering algorithm would be largely
+similar.  So, based on the criteria we discussed previously, the code
+that does the filtering selection would be a great opportunity to make
+a function parameter.  We can break out the filtering selection into
+its own function.  This function will return true if the element
+is in the list, and false otherwise. It can then be made a 
+parameter to the function to allow for alternative filters.
+Here is how it would look:
+</para>
+
+<example>
+<title>A generic filter function</title>
+<programlisting>
+(define filter
+	(lambda (filter-func the-list)
+		(let
+			(
+				;This will hold the filtered elements
+				(new-list '()))
+			;Cycle through the elements
+			(for-each
+				(lambda (entry)
+					;if it matches the filter functon
+					;add it to the result list
+					(if (filter-func entry)
+						(set! new-list (cons entry new-list))))
+				the-list)
+			;return new-list (note that this will be in
+			;reverse order that the items were in the
+			;original list)
+			new-list)))
+
+(define number-list '(1 2 3 4 5 6 7 8 9))
+		
+(display (filter even? number-list)) ;should display (8 6 4 2)
+(newline)
+
+(display (filter odd? number-list)) ;should display (9 7 5 3 1)
+(newline)
+
+(display (filter (lambda (x) (< x 5)) number-list)) ;should display (4 3 2 1)
+(newline)
+</programlisting>
+</example> 
+
+<para> Now we have a pretty useful function.  Sometimes, though, it
+may be useful to pre-package a filter function so we don't have to
+write it out every time we use it.  This is especially true if the
+function parameter is a long lambda expression.  In order to help
+create new, specialized filtering functions we can define a new
+function that will generate new filtering functions.  We'll call this
+function <literal>make-filter</literal>: </para>
+
+<example>
+<title>A filter-generating function</title>
+<programlisting>
+(define make-filter
+	(lambda (comparison)
+		(lambda (the-list)
+			(filter comparison the-list))))
+
+(define filter-evens (make-filter even?))
+(define filter-odds (make-filter odd?))
+(define filter-under20 (make-filter (lambda (x) (< x 20))))
+</programlisting>
+</example>
+
+<para> Although these examples are pretty trivial, when we have more
+complicated filtering procedures, <literal>make-filter</literal> can
+save a lot of time and errors.  </para>
+
+<!-- FIXME - should I subsection this? -->
+
+<para> As mentioned, in the C programming language closures are not
+directly supported.  C-language functions have no data associated with
+them when they are defined.  We can have static variables, but we
+can only have one value in the static variable at a time.  
+With closures, each closure has its own environment attached, allowing
+the programmer to have multiple instances of the function, each with
+their own local environment.  </para>
+
+<para> Under the hood, Scheme closures are a structure containing two
+pointers - one to the function itself, and one to the environment.
+Therefore, we can simulate a closure in C by having a struct with two
+pointers - one a function pointer and the other a void pointer.
+We use a void pointer so that we don't have to worry about what the
+environment looks like.  We give the programmer the freedom to choose.
+The function pointer is declared in a very general way in order to 
+support a large number of functions without casting.
+The closure structure looks like this: </para>
+
+<example>
+<title>Closure definition in C</title>
+<programlisting>
+typedef void * (*generic_function)(void *, ...);
+typedef struct {
+	generic_function function;
+	void *environment;
+} closure;
+</programlisting>
+</example>
+
+<para> The <literal>generic_function</literal> type was created in
+order to have the most generic calling interface to be used in a wide
+variety of situations.  It also makes it easy to typecast other
+function types to be used within the closure.  The environment is a
+void pointer, again for ease of use in casting.  The parts of the
+program that create and consume the environment are responsible for
+knowing it's layout.  The <literal>closure</literal> struct is only
+responsible for holding the pointer.  Some APIs for closures define an
+entire marshalling system for creating and using closures (see the <ulink
+url="#Resources">Resources</ulink> section for a link), but this is all
+that's necessary for a basic implementation. </para>
+
+<para> Let's look at a C version of our counter program to see how all
+of this works together: </para>
+
+<example>
+<title>Counter closure in C</title>
+<programlisting>
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+/* Closure definitions */
+typedef void *(*generic_function)(void *p, ...);
+typedef struct {
+    generic_function function;
+	void *environment;
+} closure;
+
+int nextval(void *environment);
+
+/* This is the function that creates the closure */
+closure make_counter(int startval)
+{
+	closure c;
+
+	/* The data is very simple.  We are just storing an int,
+	   so all we need is a pointer to an int.
+	 */
+	int *value = malloc(sizeof(int));
+	*value = startval;
+
+	/* Setup the closure */
+	c.function = (generic_function)nextval;
+	c.environment = value;
+
+	/* Return the closure */
+	return c;
+}
+
+/* This is the function that is used for the closure */
+int nextval(void *environment)
+{
+	/* convert the environment data back into the form used
+	 * by our functions
+	 */
+	int *value = environment;
+
+	/* Increment */
+	(*value)++;
+
+	/* Return the result */
+	return (*value);
+}
+
+int main()
+{
+	/* Create the two closures */
+	closure my_counter = make_counter(2);
+	closure my_other_counter = make_counter(3);
+
+	/* Run the closures */
+	printf("The next value is %d\n", ((generic_function)my_counter.function)(my_counter.environment))
+	printf("The next value is %d\n", ((generic_function)my_other_counter.function)(my_other_counter.environment));
+	printf("The next value is %d\n", ((generic_function)my_counter.function)(my_counter.environment));
+
+	return 0;
+}
+</programlisting>
+</example>
+
+<para> We're missing some clean-up here, but if we use garbage
+collection as explained in a <ulink
+url="http://www.ibm.com/developerworks/linux/library/l-memory/">previous
+article</ulink> it won't be an issue.</para>
+
+<para> Many API's do closures a slightly different than described
+here.  Instead of defining a closure structure which contain both the
+function pointer and the environment pointer, whenever a closure is
+needed the function pointer and the environment pointer are passed
+separately in the function call.  Either way, faking closures in C
+gets more difficult to manage as the environments being passed become
+more complex.  The Scheme language is all setup to do all the work for
+us.  </para>
+
+</sect1>
+
+<sect1>
+<title>Functions and Object-Oriented Programming</title>
+
+<para> Although it may not be immediately obvious, there is a direct
+relationship between closures in Scheme and objects in object-oriented
+languages.  Think back to when we made our counter function.  What
+components did we have?  We had a function that created a set of local
+variables, and then returned a single function (a closure) that acted
+on those variables (because of the environment).  Let's look at the
+parts of object-oriented programming we have already here: </para>
+
+<itemizedlist>
+<listitem><para>The function that created the function operates exactly like a constructor.</para></listitem>
+<listitem><para>The local variables defined in the environment during the constructor behave exactly like instance/member variables of an object.</para></listitem>
+<listitem><para>The returned function behaves like a member function.</para></listitem>
+</itemizedlist>
+
+<para>
+The only things missing are the ability to declare
+<emphasis>multiple</emphasis> member functions, destructors, and more
+object-oriented syntax.  In fact, we can view an object as simply a
+set of functions defined over the same local environment.  Or, hinting
+at a possible implementation, we could call them a
+<emphasis>vector</emphasis> of functions defined over the same local
+environment.
+<!-- FIXME - mh says this last sentence could be clearer, but not sure how -->
+</para>
+
+<para>
+Let's see how our counter would look in an object-oriented
+language like C++:
+</para>
+
+<example>
+<title>The counter function rewritten as a class</title>
+<programlisting>
+class Counter
+{
+	private:
+	int value;
+	public:
+	Counter(int initial_value)
+	{
+		value = initial_value;
+	}
+
+	int nextValue()
+	{
+		value++;
+		return value;
+	}
+};
+</programlisting>
+</example>
+
+<para>
+Of course, as mentioned earlier, in order to get real object-oriented
+programming we need to be able to define a vector of functions over
+the same closure.  So let's do that.  We'll use our same counter code,
+adding a <literal>setValue</literal> method to set the current value
+to whatever we choose.
+</para>
+
+<example>
+<title>Counter functions written as objects</title>
+<programlisting>
+(define make-counter
+	(lambda (value)
+		(vector
+			(lambda ()
+				(set! value (+ value 1))
+				value)
+			(lambda (new-value)
+				(set! value new-value)
+				value))))
+(define nextValue (lambda (obj) (vector-ref obj 0)))
+(define setValue (lambda (obj) (vector-ref obj 1)))
+
+(define my-counter (make-counter 3))
+
+(display ((nextValue my-counter))) ;displays 4
+(newline)
+
+((setValue my-counter) 25) ;now my-counter's value is 25
+
+(display ((nextValue my-counter))) ;displays 26
+(newline)
+</programlisting>
+</example>
+
+<para> As can be seen in the <literal>make-counter</literal> function,
+in order to get a vector of functions defined over a local
+environment, we just defined a vector where each member was a function
+defined within the same environment.  However, there is some
+difficulty in referring to the functions in the vector, since vectors
+are referenced by position.  Remembering the offset of each function
+within the vector would be a pain, especially if we had multiple
+classes.  Calling <literal>((vector-ref my-counter 0))</literal>, for
+example, would be horribly unintuitive.  Therefore, we defined some
+helper functions to look up those indexes for us.  </para>
+
+<para> In the program, there is what looks like an extra set of
+parentheses around our method calls.  The extra parentheses is
+included because our helper functions only look up the function - they
+don't actually call it.  <literal>nextValue</literal> only looks up
+the nextvalue function on the object.  After being looked up, the
+function still has to be called.  The second set of parentheses
+actually performs the call.  The two separate function calls
+in this implementation allow us to see more clearly that it is a
+two-step process.
+</para>
+
+<para> Here is the program rewritten to use a one-step function call
+for object methods: </para>
+
+<example>
+<title>Counter functions written as objects with combined lookup/call steps</title>
+<programlisting>
+(define make-counter
+	(lambda (value)
+		(vector
+			(lambda ()
+				(set! value (+ value 1))
+				value)
+			(lambda (new-value)
+				(set! value new-value)
+				value))))
+(define nextValue (lambda (obj) ((vector-ref obj 0))))
+(define setValue (lambda (obj value) ((vector-ref obj 1) value)))
+
+(define my-counter (make-counter 3))
+
+(display (nextValue my-counter)) ;displays 4
+(newline)
+
+(setValue my-counter 25) ;now my-counter's value is 25
+
+(display (nextValue my-counter)) ;displays 26
+(newline)
+</programlisting>
+</example>
+
+<para> Note that this mechanism also allows for single inheritance.
+Because the way we are looking up the function is based on the index
+into the array, inheritance depends on the functions in compatible
+classes and subclasses to have the corresponding functions in the same
+location.  If we were doing multiple inheritance, several functions
+would each need to be at the same slot.  Multiple inheritance (or even
+just Java-style interfaces), while possible, needs a different
+function-lookup mechanism and is much more difficult to implement.
+</para>
+
+<para> So, why go to all that trouble to define objects when there are
+good object-oriented languages and object-oriented extensions to
+Scheme already available?  Well, really, we shouldn't.  However, I
+wanted to point out the basic equivalence between objects and
+closures.  In fact, it's almost a rite-of-passage for a programmer to
+have built their own object system using closures while learning
+Scheme.  </para>
+
+<para> So why have both closures and objects when they are both
+somewhat equivalent?  For small systems, closures are almost always
+easier to handle than objects.  The amount of code that goes into
+creating a class for an object dwarfs the code needed to make an
+anonymous function on a local environment.  However, when we need to
+define several functions (probably more than 3 or 4) that work in
+tandem on a local environment, objects often work better.  Now that
+we know how both systems work, if they language we are working in is
+missing one or the other, we can always use what we have to simulate
+what we don't have.</para>
+
+<!--<para>
+Now that we are a function-combining, function-passing,
+function-using guru, go forth and write generic, pluggable code.
+</para>-->
+
+<!-- NOTE - may want to expand this to include an example of reduce using such function techniques -->
+				
+
+</sect1>
+
+<!-- RESOURCES
+
+<resource-list>
+
+<ul>
+<li><a href="http://www.ccs.neu.edu/home/dorai/t-y-scheme/t-y-scheme.html">Teach Yourself Scheme in Fixnum Days</a> is a great online tutorial of the Scheme language.</a></li>
+<li><a href="http://www.newty.de/fpt/index.html">This site</a> has a great discussion on using function pointers in C/C++.</li>
+<li>Even if you have mastered modern programming, relearning computer science through the book <a href="http://www.htdp.org/"><i>How to Design Programs</i></a> is an eye-opening read on the expressive power of functions and functional programming.</li>
+<li>Chapter 5 of <a href="http://www.amazon.com/exec/obidos/ASIN/0262062178/freeeducation-20/"><i>Essentials of Programming Languages</i></a> has four different implementations of object-oriented Scheme, with a good discussion of the pros and cons of each.</li>
+<li><a href="http://srfi.schemers.org/srfi-1/srfi-1.html">SRFI 1</a> contains a whole load of useful functions for lists, many of which takes function parameters to extend their processing (SRFI's are like RFC's for Scheme).</li>
+<li>The Gtk+ 2.0 API has <a href="http://developer.gimp.org/api/2.0/gobject/gobject-Closures.html">a whole closure API</a> that is worth looking at.</li>
+<li>The tutorial "An Introduction to Scheme and its Implementation" has a <a href="http://www.cs.utexas.edu/users/wilson/schintro/schintro_123.html">section on how Scheme interpretters implement environments</a> for handling closures.</a></li>
+</ul>
+
+-->
+<!-- EXERCISES
+
+<remark>In the book version, be sure to include processing a list of "data" items in C as an exercise</remark>
+
+-->
+
+
+<!-- templatized code -->
+<!-- function-generating functions:
+      - specialized operators
+      - stateful functions
+  --> 
+
+</chapter>

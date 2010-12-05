@@ -1,0 +1,578 @@
+<chapter>
+<title>Programming the SPU in C</title>
+
+<para>
+In this article, we will apply our knowledge of the SPU to programming the Cell in C/C++.  We will learn how to use the vectorization extensions, how to direct the compiler to do branch prediction, and several DMA buffer-handling techniques. 
+</para>
+
+<para>
+So far our discussions about the SPU have focused on the SPU's assembly language in order to help you get to know the processor intimately.  Now we will switch to C/C++ so that we can let the compiler 
+do a large amount of the work for us.  In order to utilize the SPU C/C++ language extensions, the header file <literal>spu_intrinsics.h</literal> must be included at the beginning of your code. 
+</para>
+
+<sect1>
+<title>Vector Basics on the SPU</title>
+
+<para>
+The primary difference between vector processors and non-vector processors is that vector processors have large registers which allow them to store multiple values (called <emphasis>elements</emphasis>) of the same data type and process them with the same operation at once.  On vector processors a register is treated both as a single unit and as multiple units.  To represent this concept in C/C++, a <literal>vector</literal> keyword has been added to the language, which takes a primitive data type and uses it across a whole register.  For instance, <literal>vector unsigned int myvec;</literal> creates a four integer vector where the elements are to be loaded, processed, and stored altogether, and the variable <literal>myvec</literal> refers to all four of them simultaneously.  The <literal>signed</literal>/<literal>unsigned</literal> is required for non-floating point declarations.  Vector constants are created by putting the type of vector in parentheses followed by the contents of the vector in curly braces.  For instance, you can assign values to a vector named <literal>myvec</literal> like this:
+</para>
+
+<programlisting>
+vector unsigned int myvec = (vector unsigned int){1, 2, 3, 4};
+</programlisting>
+
+<para>
+In addition to direct assignment, there are four main primitives that are used to go between scalar and vector data: <literal>spu_insert</literal>, <literal>spu_extract</literal>, <literal>spu_promote</literal>, and <literal>spu_splats</literal>.  <literal>spu_insert</literal> is used to put a scalar value into a specific element of a vector.  <literal>spu_insert(5, myvec, 0)</literal> returns a copy of the vector <literal>myvec</literal> with the first element (element 0) of the new vector set to 5.  <literal>spu_extract</literal> pulls out a specific element from a vector and returns it as a scalar.  <literal>spu_extract(myvec, 0)</literal> returns the first element of <literal>myvec</literal> as a scalar.  <literal>spu_promote</literal> converts a value to a vector, but only defines one element.  The type of vector depends on the type of value promoted.  <literal>spu_promote((unsigned int)5, 1)</literal> creates a vector of <literal>unsigned int</literal>s with 5 in the second element (element 1), and the remaining elements undefined.  <literal>spu_splats</literal> works like <literal>spu_promote</literal>, except that it copies the value to <emphasis>all</emphasis> elements of the vector.  <literal>spu_splats((unsigned int)5)</literal> creates a vector of <literal>unsigned int</literal>s with each element having the value 5.
+</para>
+
+<para>
+It is tempting to think of vectors as short arrays, but in fact they act differently in several respects.  Vectors are treated essentially as scalar values, while arrays are manipulated as references.  For instance, <literal>spu_insert</literal> <emphasis>does not modify the contents of the vector</emphasis>.  Instead, it returns a brand new copy of the vector with the inserted element.  It is an expression that results in a value, not a modification to the value itself.  For instance, just as <literal>myvar + 1</literal> gives back a new value instead of modifying <literal>myvar</literal>, <literal>spu_insert(1, myvec, 0)</literal> does not modify <literal>myvec</literal>, but instead returns a new vector value that is equivalent with <literal>myvec</literal> but has the first element set to 1.
+</para>
+
+<para>
+Here is a short program using these ideas (enter as <literal>vec_test.c</literal>):
+</para>
+
+<example>
+<title>Program to Introduce SPU C/C++ Language Extensions</title>
+<programlisting>
+#include &lt;spu_intrinsics.h&gt;
+
+void print_vector(char *var, vector unsigned int val) {
+	printf("Vector %s is: {%d, %d, %d, %d}\n", var, spu_extract(val, 0), spu_extract(val, 1), spu_extract(val, 2), spu_extract(val, 3));
+}
+
+int main() {
+	/* Create four vectors */
+	vector unsigned int a = (vector unsigned int){1, 2, 3, 4};
+	vector unsigned int b;
+	vector unsigned int c;
+	vector unsigned int d;
+	
+	/* b is identical to a, but the last element is changed to 9 */
+	b = spu_insert(9, a, 3);
+
+	/* c has all four values set to 20 */
+	c = spu_splats((unsigned int) 20);
+
+	/* d has the second value set to to 5, and the others are garbage */
+	/* (in this case they will all be set to 5, but that should not be relied upon) */
+	d = spu_promote((unsigned int)5, 1);
+
+	/* Show Results */
+	print_vector("a", a);
+	print_vector("b", b);
+	print_vector("c", c);
+	print_vector("d", d);
+
+	return 0;
+}
+</programlisting>
+</example>
+
+<para>
+To compile and run the program under elfspe, simply do:
+</para>
+
+<programlisting>
+spu-gcc vec_test.c -o vec_test
+./vec_test
+</programlisting>
+
+</sect1>
+
+<sect1>
+<title>Vector Intrinsics</title>
+
+<para>
+The C/C++ language extensions include data types and intrinsics that give the programmer nearly full access to the SPU's assembly language instructions.  However, many intrinsics are provided which greatly simplify the SPU's assembly language by coalescing many similar instructions into one intrinsic.  Instructions that differ only on the type of operand (such as <literal>a</literal>, <literal>ai</literal>, <literal>ah</literal>, <literal>ahi</literal>, <literal>fa</literal>, and <literal>dfa</literal> for addition) are represented by a single C/C++ intrinsic which selects the proper instruction based on the type of the operand.  For addition, <literal>spu_add</literal>, when given two <literal>vector unsigned int</literal>s as parameters, will generate the <literal>a</literal> (32-bit add) instruction.  However, if given two <literal>vector float</literal>s as parameters, it will generate the <literal>fa</literal> (float add) instruction.  Note that the intrinsics generally have the same limitations as their corresponding assembly language instructions.  However, in cases where an immediate value is too large for the appropriate immediate-mode instruction, the compiler will promote the immediate value to a vector and do the corresponding vector/vector operation.  For instance, <literal>spu_add(myvec, 2)</literal> generates an <literal>ai</literal> (add immediate) instruction, while <literal>spu_add(myvec, 2000)</literal> first loads the <literal>2000</literal> into its own vector using <literal>il</literal> and then performs the <literal>a</literal> (add) instruction.
+</para>
+
+
+
+<para>
+The order of operands in the intrinsics is essentially the same as those of the assembly language instruction except that the first operand (which holds the destination register in assembly language) is not specified, but instead is used as the return value for the function.  The compiler supplies the actual parameter in the code it generates. 
+</para>
+
+<para>
+Here are some of the more common SPU intrinsics (types are not given as most of them are polymorphic):
+</para>
+
+<variablelist>
+<varlistentry>
+<term><literal>spu_add(val1, val2)</literal></term>
+<listitem><para>
+Adds each element of <literal>val1</literal> to the corresponding element of <literal>val2</literal>.  If <literal>val2</literal> is a non-vector value, it adds the value to each element of <literal>val1</literal>.
+</para></listitem>
+</varlistentry>
+
+<varlistentry>
+<term><literal>spu_sub(val1, val2)</literal></term>
+<listitem><para>
+Subtract each element of <literal>val2</literal> from the corresponding element of <literal>val1</literal>.  If <literal>val1</literal> is a non-vector value, then <literal>val1</literal> is replicated across a vector, and then <literal>val2</literal> is subtracted from it.
+</para></listitem>
+</varlistentry>
+
+<varlistentry>
+<term><literal>spu_mul(val1, val2)</literal></term>
+<listitem><para>
+Because the multiplication instructions operate so differently, the SPU intrinsics does not coalesce them as much it does for other operations.  <literal>spu_mul</literal> handles floating point multiplication (single and double precision).  The result is a vector where each element is the result of multiplying the corresponding elements of <literal>val1</literal> and <literal>val2</literal> together.
+</para></listitem>
+</varlistentry>
+
+<varlistentry>
+<term><literal>spu_and(val1, val2)</literal>, <literal>spu_or(val1, val2)</literal>, <literal>spu_not(val)</literal>, <literal>spu_xor(val1, val2)</literal>, <literal>spu_nor(val1, val2)</literal>, <literal>spu_nand(val1, val2)</literal>, <literal>spu_eqv(val1, val2)</literal></term>
+<listitem><para>
+Boolean operations operate bit-by-bit, so the type of operands the boolean operations receive is not relevant except for determining the type of value they will return.  <literal>spu_eqv</literal> is a bitwise equivalency operation, not a per-element equivalency operation.
+</para></listitem>
+</varlistentry>
+
+<varlistentry>
+<term><literal>spu_rl(val, count)</literal>, <literal>spu_sl(val, count)</literal></term>
+<listitem><para>
+<literal>spu_rl</literal> rotates each element of <literal>val</literal> left by the number of bits specified in the corresponding element of <literal>count</literal>.  Bits rotated off the end are rotated back in on the right.  If <literal>count</literal> is a scalar value, then it is used as the count for all elements of <literal>val</literal>.  <literal>spu_sl</literal> operates the same way, but performs a shift instead of a rotate.
+</para></listitem>
+</varlistentry>
+
+<varlistentry>
+<term><literal>spu_rlmask(val, count)</literal>, <literal>spu_rlmaska</literal>, <literal>spu_rlmaskqw(val, count)</literal>, <literal>spu_rlmaskqwbyte(val, count)</literal></term>
+<listitem><para>
+These are very confusingly-named operations.  They are named "roate left and mask" but they are actually performing <emphasis>right shifts</emphasis> (they are <emphasis>implemented</emphasis> by a combination of left shifts and masks, but the programming interface is for right shifts).  <literal>spu_rlmask</literal> and <literal>spu_rlmaska</literal> shifts each element of <literal>val</literal> to the right by the number of bits in the corresponding element of <literal>count</literal> (or the value of <literal>count</literal> if <literal>count</literal> is a scalar).  <literal>spu_rlmaska</literal> replicates the sign bit as bits are shifted in.  <literal>spu_rlmaskqw</literal> operates on the whole quadword at a time, but only up to 7 bits (it modulus's <literal>count</literal> to put it in range).  <literal>spu_rlmaskqwbyte</literal> works similarly, except that <literal>count</literal> is the number of bytes instead of bits, and <literal>count</literal> is modulus 16 instead of 8.
+</para></listitem>
+</varlistentry>
+
+<varlistentry>
+<term><literal>spu_cmpgt(val1, val2)</literal>, <literal>spu_cmpeq(val1, val2)</literal></term>
+<listitem><para>
+These instructions perform element-by-element comparisons of their two operands.  The results are stored as all ones (for true) and all zeros (for false) in the resulting vector in the corresponding element.  <literal>spu_cmpgt</literal> performs a greater-than comparison while <literal>spu_cmpeq</literal> performs an equality comparison.
+</para></listitem>
+</varlistentry>
+
+<varlistentry>
+<term><literal>spu_sel(val1, val2, conditional)</literal></term>
+<listitem><para>
+This corresponds to the <literal>selb</literal> assembly language instruction.  The instruction itself is bit-based, so all types use the same underlying instruction.  However, the intrinsic operation returns a value of the same type as the operands.  As in assembly language, <literal>spu_sel</literal> looks at each bit in <literal>conditional</literal>.  If the bit is zero, the corresponding bit in the result is selected from the corresponding bit in <literal>val1</literal>; otherwise it is selected from the corresponding bit in <literal>val2</literal>.
+</para></listitem>
+</varlistentry>
+
+<varlistentry>
+<term><literal>spu_shuffle(val1, val2, pattern)</literal></term>
+<listitem><para>
+This is an interesting instruction which allows you to rearrange the bytes in <literal>val1</literal> and <literal>val2</literal> according to a pattern, specified in <literal>pattern</literal>.   The instruction goes through each byte in <literal>pattern</literal>, and if the byte starts with the bits <literal>0b10</literal>, the corresponding byte in the result is set to <literal>0x00</literal>; if the byte starts with the bits <literal>0b110</literal>, the corresponding byte in the result is set to <literal>0xff</literal>; if the byte starts with the bits <literal>0b111</literal>, the corresponding byte in the result is set to <literal>0x80</literal>; finally (and most importantly), if none of the previous are true, the last five bits of the pattern byte are used to choose which byte from <literal>val1</literal> or <literal>val2</literal> should be taken as the value for the current byte.  The two values are concatenated, and the five-bit value is used as the byte index of the concatenated value.  This is used for inserting elements into vectors as well as performing fast table lookups.
+</para></listitem>
+</varlistentry>
+
+</variablelist>
+
+<para>
+All of the instructions that are prefixed with <literal>spu_</literal> will try to find the best instruction match based on the types of operands.  However, not all vector types are supported by all instructions - it is based on the availability of an assembly language instructions to handle it.  In addition, if you want a specific instruction rather than having the compiler choose one, you can perform almost any non-branching instruction with the <emphasis>specific instrinsics</emphasis>.  All specific intrinsics take the form <literal>si_assemblyinstructionname</literal> where <literal>assemblyinstructionname</literal> is the name of the assembly language instruction as defined in the SPU Assembly Language Specification.  So, <literal>si_a(a, b)</literal> forces the instruction <literal>a</literal> to be used for addition.  All operands to specific intrinsics are cast to a special type called <literal>qword</literal>, which is essentially an opaque register value type.  The return value from specific intrinsics are also <literal>qword</literal>s, which can then be cast into whatever vector type you wish.
+</para>
+
+</sect1>
+
+<sect1>
+<title>Using the Intrinsics</title>
+
+<para>
+Now let's look at how to do our uppercase conversion function using C/C++ rather than assembly language.  The basic steps for converting a single vector is:
+</para>
+
+<orderedlist>
+<listitem><para>Convert all values using the uppercase conversion.</para></listitem>
+<listitem><para>Do a vector comparison of all bytes to see if they are between <literal>'a'</literal> and <literal>'z'</literal>.</para></listitem>
+<listitem><para>Use the comparison to choose between the converted and unconverted values using the select instruction.</para></listitem>
+</orderedlist>
+
+<para>
+In addition, in order to help better schedule instructions, the assembly language version performed several of these conversions simultaneously.  In C/C++, we can call an inline function multiple times, and let the compiler take care of scheduling it appropriately.  This doesn't mean that our knowledge of instruction scheduling is useless, but rather because we know how instruction scheduling works, we are able to give the compiler better raw material to work with.  If we did not know that instruction scheduling improves our code, and that instruction scheduling can be helped by unrolling our loops, then we would not be able to help the compiler optimize our code.
+</para>
+
+<para>
+So here is the C/C++ version of the <literal>convert_buffer_to_upper</literal> function (enter as <literal>convert_buffer_c.c</literal> in the same directory as the files from the previous articles - you will need them to compile the full application):
+</para>
+
+<example>
+<title>Uppercase Conversion in C/C++</title>
+<programlisting>
+#include &lt;spu_intrinsics.h&gt;
+
+unsigned char conversion_value = 'a' - 'A';
+
+inline vec_uchar16 convert_vec_to_upper(vec_uchar16 values) {
+	/* Process all characters */
+	vec_uchar16 processed_values = spu_absd(values, spu_splats(conversion_value));
+	/* Check to see which ones need processing (those between 'a' and 'z')*/
+	vec_uchar16 should_be_processed = spu_xor(spu_cmpgt(values, 'a'-1), spu_cmpgt(values, 'z'));
+	/* Use should_be_processed to select between the original and processed values */
+	return spu_sel(values, processed_values, should_be_processed);
+}
+
+void convert_buffer_to_upper(vec_uchar16 *buffer, int buffer_size) {
+	/* Find end of buffer (must be casted first because size is bytes) */
+	vec_uchar16 *buffer_end = (vec_uchar16 *)((char *)buffer + buffer_size);
+
+	while(__builtin_expect(buffer < buffer_end, 1)) {
+		*buffer = convert_vec_to_upper(*buffer);
+		buffer++;
+		*buffer = convert_vec_to_upper(*buffer);
+		buffer++;
+		*buffer = convert_vec_to_upper(*buffer);
+		buffer++;
+		*buffer = convert_vec_to_upper(*buffer);
+		buffer++;
+	}
+}
+</programlisting>
+</example>
+
+<para>
+To compile and run, simply do:
+</para>
+
+<programlisting>
+spu-gcc convert_buffer_c.c convert_driver.s dma_utils.s -o spe_convert
+embedspu -m64 convert_to_upper_handle spe_convert spe_convert_csf.o
+gcc -m64 spe_convert_csf.o ppu_dma_main.c -lspe -o dma_convert
+./dma_convert
+</programlisting>
+
+<para>
+As you probably noticed, this program uses slightly different notation for type names than used previously.  The SPU Intrinsics defines simplified vector type names starting with <literal>vec_</literal>.  For integer types, the next character is <literal>u</literal> or <literal>s</literal> for signed/unsigned types.  After that is the name of the basic type being used (<literal>char</literal>, <literal>int</literal>, <literal>float</literal>, etc.).  Finally, at the end is the number of elements of that type which are in the vector. <literal>vec_uchar16</literal>, for instance, is a 16-element vector of <literal>unsigned char</literal>s, and <literal>vec_float4</literal> is a 4-element vector of <literal>float</literal>s.  This notation greatly simplifies the typing involved.
+</para>
+
+<para>
+When computing the <literal>buffer_end</literal> the program did a few casting gymnastics.  Because <literal>size</literal> was in bytes, we had to convert the pointer to a <literal>char *</literal> so that when we added the size, it would move by bytes rather than by quadwords.  Vector pointers, since the value they point to is 16-bytes long, move forward in increments of 16 bytes, while <literal>char</literal> pointers move forward in single-byte increments.  That is why <literal>buffer++</literal> works -- it is incrementing by a single vector length, which is 16 bytes.
+</para>
+
+<para>
+Another interesting feature of the C/C++ version is <literal>__builtin_expect</literal> which helps the compiler do branch hinting.  You cannot do branch hinting directly in C/C++ because you have neither the address of the branch nor the target.  Therefore, you instead provide hints to the compiler, which can then generate appropriate branch hints.  <literal>__builtin_expect(buffer < buffer_end, 1)</literal> generates branching code based off of the first argument, <literal>buffer < buffer_end</literal>, but produces branch hints based off of the second argument, 1.  It tells the compiler to generate hints that expect the value of <literal>buffer < buffer_end</literal> to be 1.
+</para>
+
+<para>
+Now, there are two compilers currently available for SPU programming, and, as one might expect, they excel in different areas.  GCC, for instance, does a fantastic job of interleaving the instructions between invocations of <literal>convert_vec_to_upper</literal> so that instruction latency is minimized.  However, in this particular program, <literal>__builtin_expect</literal> gives us almost no help at all.  IBM's XLC compiler, on the other hand, is the opposite.  It does not interleave the instructions between invocations of <literal>convert_vec_to_upper</literal> at all, but structures the loop so that the branch hint has a maximum effect, and in fact was able to guess the branch hint without it being supplied.  Unsurprisingly, neither compiler does nearly as well as our hand-coded assembly language version from the previous article, but for this program XLC outperformed GCC.  Code that was compiled without any optimization flags resulted in code that was approximately <emphasis>five times slower</emphasis>, so be sure to always compile with <literal>-O2</literal> or <literal>-O3</literal>.
+</para>
+
+</sect1>
+
+<sect1>
+<title>Composite Intrinsics and MFC Programming</title>
+
+<para>
+The composite intrinsics are those that compile to multiple instructions.  The composite intrinsics encapsulate common usage patterns on the SPE in order to simplify its programming.  The two most important composite intrinsics are <literal>spu_mfcdma64</literal> and <literal>spu_mfcstat</literal>.  <literal>spu_mfcdma64</literal> is almost exactly like the <literal>dma_transfer</literal>function we wrote and used in previous articles, except that the high and low parts of the effective address are split between two 32-bit parameters (<literal>dma_transfer</literal> used one 64-bit parameter for the effective address).
+</para>
+
+<para>
+<literal>spu_mfcdma64</literal> takes six parameters:
+</para>
+<orderedlist>
+<listitem><para>the local store address for the transfer</para></listitem>
+<listitem><para>the high-order 32-bits of the effective address</para></listitem>
+<listitem><para>the low-order 32-bits of the effective address</para></listitem>
+<listitem><para>the size of the transfer</para></listitem>
+<listitem><para>a "tag" to give the transfer</para></listitem>
+<listitem><para>the DMA command to give</para></listitem>
+</orderedlist>
+
+<para>
+Often times you will have the effective address as a single 64-bit value.  To separate it out into parts, use <literal>mfc_ea2h</literal> to extract the higher-order bits and <literal>mfc_ea2l</literal> to extract the lower-order bits.  The tag is a number designated by the programmer between 0 and 31 used to identify a transfer or for a group of transfers for status queries and sequencing operations.  The DMA command can take a range of values (see <ulink url="#resources">Resources</ulink> for information on where to find the ones not listed here).  DMA transfers are called PUTs if they transfer from the SPU local store to the system memory, and GETs if they go the other direction.  These DMA command names are prefixed with either <literal>MFC_PUT</literal> or <literal>MFC_GET</literal>, respectively.  Then, MFC commands either operate individually or on a list.  If the DMA command is a list command, the DMA command name has an <literal>L</literal> appended to it (see <ulink url="#resources">Resources</ulink> for more information on DMA list commands).  The DMA command can also have certain levels of synchronization applied to it.  For barrier synchronization add a <literal>B</literal>, for fence synchronization add an <literal>F</literal>, and for no synchronization you do not need to add anything.  Finally, all DMA command names have a <literal>_CMD</literal> suffix.  So, the command name for a single transfer from the local store to system memory using fence synchronization would be <literal>MFC_PUTF_CMD</literal>.
+</para>
+
+<para>
+By default DMA commands on the SPE's MFC are totally unordered - the MFC may process them in any order that it wishes.  However, tags, fences, and barriers can be used to force ordering constraints on MFC DMA transfers.  A <emphasis>fence</emphasis> establishes the constraint that a given DMA transfer only execute <emphasis>after</emphasis> all previous commands using the same tag have completed.  A <emphasis>barrier</emphasis> establishes the constraint that a given DMA transfer only execute <emphasis>after</emphasis> all previous commands using the same tag have completed (like a fence), but also that they must execute <emphasis>before</emphasis> all subsequent commands using the same tag.
+</para>
+
+<para>
+Here are some examples of <literal>spu_mfcdma64</literal>:
+</para>
+
+<example>
+<title>Using <literal>spu_mfcdma64</literal></title>
+<programlisting>
+typedef unsigned long long uint64;
+typedef unsigned long uint32;
+uint64 ea1, ea2, ea3, ea4, ea5; /* assume each of these have sensible values */
+void *ls1, *ls2, *ls3, *ls4; /* assume each of these have sensible values */
+uint32 sz1, sz2, sz3, sz4; /* assume each of these have sensible values */
+int tag = 3; /* Arbitrary value, but needs to be the same for all synchronized transfers */
+
+/* Transfer 1: System Storage -> Local Store, no ordering specified */
+spu_mfcdma64(ls1, mfc_ea2h(ea1), mfc_ea2l(ea1), sz1, tag, MFC_GET_CMD);
+
+/* Transfer 2: Local Storage -> System Storage, must perform after previous transfers */
+spu_mfcdma64(ls2, mfc_ea2h(ea2), mfc_ea2l(ea2), sz2, tag, MFC_PUTF_CMD);
+
+/* Transfer 3: Local Storage -> System Storage, no ordering specified */
+spu_mfcdma64(ls3, mfc_ea2h(ea3), mfc_ea2l(ea3), sz3, tag, MFC_PUT_CMD);
+
+/* Transfer 4: Local Storage -> System Storage, must be synchronized */
+spu_mfcdma64(ls4, mfc_ea2h(ea4), mfc_ea2l(ea4), sz4, tag, MFC_PUTB_CMD);
+
+/* Transfer 5: System Storage -> Local Storage, no ordering specified */
+spu_mfcdma64(ls4, mfc_ea2h(ea5), mfc_ea2l(ea5), sz4, tag, MFC_GET_CMD);
+</programlisting>
+</example>
+
+<para>
+The above example has several possible orderings.  All of the following are possibilities:
+</para>
+
+<itemizedlist>
+<listitem><para>1, 2, 3, 4, 5</para></listitem>
+<listitem><para>3, 1, 2, 4, 5</para></listitem>
+<listitem><para>1, 3, 2, 4, 5</para></listitem>
+</itemizedlist>
+
+<para>
+Because transfer 2 only uses a fence and transfer 3 doesn't specify any ordering at all, transfer 3 is free to float anywhere before the barrier (transfer 4).  The only requirement for the first three transfers is that transfer 2 must be performed after transfer 1.  Transfer 4, however, requires full synchronization of transfers before and after it.
+</para>
+
+<para>
+Take a closer look at transfers 4 and 5.  This is a useful idiom to take note of -- save and reload.  If you are processing system memory data a piece at a time into local store and storing it back into system memory, you can queue up a save and a load at the same time, using a fence or barrier to order them.  This puts all of the transferring logic into the MFC, and leaves your program free to do other computational tasks while the buffer waits for new data.  We will make use of this shortly when we talk about double buffering.
+</para>
+
+<para>
+<literal>spu_mfcdma64</literal> is quite a handy tool, but it is a little tedious, especially when you have to keep on using <literal>mfc_ea2h</literal> and <literal>mfc_ea2l</literal> to convert your addresses.  Therefore, the specification also provides a number of utility functions to lessen the amount of redundant typing necessary.  The <literal>mfc_</literal> class of functions all take the same parameters as the <literal>spu_mfcdma64</literal> function, except that the effective address is a single 64-bit parameter, and the DMA command is encoded into the function name.  It also takes two extra parameters, the <emphasis>transfer class identifier</emphasis> and the <emphasis>replacement class identifier</emphasis>.  Both of these can be safely set to zero in non-realtime applications (see <ulink url="#resources">Resources</ulink> for references to further information on these two fields).  Therefore, transfer 2 above can be rewritten as:
+</para>
+
+<programlisting>
+mfc_putf(ls2, ea2, sz2, tag, 0, 0);
+</programlisting>
+
+<para>
+Tags are useful not just for synchronizing data transfers, but also for checking on the status of transfers.  On the SPE, there is a tag mask channel which is used to specify which tags are currently used for status checks, a channel which is used to issue status requests, and another channel to read the channel status back.  Although these are pretty simple operations anyway, the specification gives special methods for performing these operations as well.  <literal>mfc_write_tag_mask</literal> takes a 32-bit integer, and uses it as a channel mask for future status updates.  In the mask, set the bit position of each tag that you want to check the status of to 1.  So, to check the status of channel 2 and 4, you would use <literal>mfc_write_tag_mask(20)</literal>, or, to make it more readable, you can do <literal>mfc_write_tag_mask(1&lt;&lt;2 | 1&lt;&lt;4);</literal>.  To actually perform the status update, you have to pick a status command, and send it using <literal>spu_mfcstat(unsigned int command)</literal>.  The commands are:
+</para>
+
+<variablelist>
+
+<varlistentry>
+<term><literal>MFC_TAG_UPDATE_IMMEDIATE</literal></term>
+<listitem><para>
+This command causes the SPE to immediately return with the status of the DMA channels.  Each channel which was specified in the channel mask will be set to 1 if there are no remaining commands in the queue with that tag (i.e. all operations that may have been previously active, are completed), and set to 0 if there are commands remaining in the queue.
+</para></listitem>
+</varlistentry>
+
+<varlistentry>
+<term><literal>MFC_TAG_UPDATE_ANY</literal></term>
+<listitem><para>
+This command causes the SPE to wait until at least one tag specified in the tag mask has no remaining commands before returning, then return a the status of the DMA channels that were specified in the tag mask.
+</para></listitem>
+</varlistentry>
+
+<varlistentry>
+<term><literal>MFC_TAG_UPDATE_ALL</literal></term>
+<listitem><para>
+This command causes the SPE to wait until all tags specified in the tag mask have no remaining commands before returning.  The return value will be 0.
+</para></listitem>
+</varlistentry>
+
+</variablelist>
+
+<para>
+To use these constants, you need to include <literal>spu_mfcio.h</literal>.
+</para>
+
+<para>
+Using <literal>spu_mfcstat</literal> allows you to both check on the status of DMA requests and wait for them.  Using <literal>MFC_TAG_UPDATE_ANY</literal> allows you to issue multiple DMA requests, let the MFC process them in whatever order it thinks is best, and then your code can respond based on the order that the MFC processes them.  
+</para>
+
+</sect1>
+
+<sect1>
+<title>Example MFC Program</title>
+<para>
+Now we are going to apply this knowledge of the MFC composite intrinsics to our uppercase conversion program.  Earlier in the article we rewrote the main conversion function in C, and now we are going to rewrite the main loop in C.  The new code is fairly straightforward (enter as <literal>convert_driver_c.c</literal>):
+</para>
+
+<example>
+<title>Uppercase Conversion MFC Transfer Code</title>
+<programlisting>
+#include &lt;spu_intrinsics.h&gt;
+#include &lt;spu_mfcio.h&gt; 
+typedef unsigned long long uint64;
+
+#define CONVERSION_BUFFER_SIZE 16384
+#define DMA_TAG 0
+
+void convert_buffer_to_upper(char *conversion_buffer, int current_transfer_size);
+
+char conversion_buffer[CONVERSION_BUFFER_SIZE];
+
+typedef struct {
+	int length __attribute__((aligned(16)));
+	uint64 data __attribute__((aligned(16)));
+} conversion_structure;
+
+int main(uint64 spe_id, uint64 conversion_info_ea) {
+	conversion_structure conversion_info; /* Information about the data from the PPE */
+
+	/* We are only using one tag in this program */
+	mfc_write_tag_mask(1&lt;&lt;DMA_TAG);
+
+	/* Grab the conversion information */
+	mfc_get(&amp;conversion_info, conversion_info_ea, sizeof(conversion_info), DMA_TAG, 0, 0);
+	spu_mfcstat(MFC_TAG_UPDATE_ALL); /* Wait for Completion */
+
+	/* Get the actual data */
+	mfc_get(conversion_buffer, conversion_info.data, conversion_info.length, DMA_TAG, 0, 0);
+	spu_mfcstat(MFC_TAG_UPDATE_ALL);
+
+	/* Perform the conversion */
+	convert_buffer_to_upper(conversion_buffer, conversion_info.length);
+                                                                                
+	/* Put the data back into system storage */
+	mfc_put(conversion_buffer, conversion_info.data, conversion_info.length, DMA_TAG, 0, 0);
+	spu_mfcstat(MFC_TAG_UPDATE_ALL); /* Wait for Completion */
+}                                                                               
+</programlisting>
+</example>
+
+<para>
+To compile and run, simply do:
+</para>
+
+<programlisting>
+spu-gcc convert_buffer_c.c convert_driver_c.c -o spe_convert
+embedspu -m64 convert_to_upper_handle spe_convert spe_convert_csf.o
+gcc -m64 spe_convert_csf.o ppu_dma_main.c -lspe -o dma_convert
+./dma_convert
+</programlisting>
+
+
+<para>
+This implementation in C follows the same basic structure as the original code, except that its more readable to human beings, which, incidentally, makes it easier to revise and expand.  For instance, one of the problems with the original code is that it is limited to the size of a DMA transfer.  What if we wanted to remove that limitation?  We could simply wrap the whole thing in a loop, and keep moving data a piece at a time until the whole string has bee processed.  Here's the revised code to do this:
+</para>
+
+<example>
+<title>Looping in the MFC Transfer Code</title>
+<programlisting>
+#include &lt;spu_intrinsics.h&gt;
+#include &lt;spu_mfcio.h&gt; /* constant declarations for the MFC */
+typedef unsigned long long uint64;
+typedef unsigned int uint32;
+
+/* Renamed CONVERSION_BUFFER_SIZE to MAX_TRANSFER_SIZE because it is now primarily used to limit the size of DMA transfers */
+#define MAX_TRANSFER_SIZE 16384 
+
+void convert_buffer_to_upper(char *conversion_buffer, int current_transfer_size);
+
+char conversion_buffer[MAX_TRANSFER_SIZE];
+
+typedef struct {
+	uint32 length __attribute__((aligned(16)));
+	uint64 data __attribute__((aligned(16)));
+} conversion_structure;
+
+int main(uint64 spe_id, uint64 conversion_info_ea) {
+	conversion_structure conversion_info; /* Information about the data from the PPE */
+
+	/* New variables to keep track of where we are in the data */
+	uint32 remaining_data; /* How much data is left in the whole string */
+	uint64 current_ea_pointer; /* Where we are in system memory */
+	uint32 current_transfer_size; /* How big the current transfer is (may be smaller than MAX_TRANSFER_SIZE) */
+
+	/* We are only using one tag in this program */
+	mfc_write_tag_mask(1&lt;&lt;0);
+
+	/* Grab the conversion information */
+	mfc_get(&amp;conversion_info, conversion_info_ea, sizeof(conversion_info), 0, 0, 0);
+	spu_mfcstat(MFC_TAG_UPDATE_ALL); /* Wait for Completion */
+
+	/* Setup the loop */
+	remaining_data = conversion_info.length;
+	current_ea_pointer = conversion_info.data;
+
+	while(remaining_data > 0) {
+		/* Determine how much data is left to transfer */
+		if(remaining_data < MAX_TRANSFER_SIZE) 
+			current_transfer_size = remaining_data;
+		else
+			current_transfer_size = MAX_TRANSFER_SIZE;
+
+		/* Get the actual data */
+		mfc_getb(conversion_buffer, current_ea_pointer, current_transfer_size, 0, 0, 0);
+		spu_mfcstat(MFC_TAG_UPDATE_ALL);
+
+		/* Perform the conversion */
+		convert_buffer_to_upper(conversion_buffer, current_transfer_size);
+                                                                                
+		/* Put the data back into system storage */
+		mfc_putb(conversion_buffer, current_ea_pointer, current_transfer_size, 0, 0, 0);
+
+		/* Advance to the next segment of data */
+		remaining_data -= current_transfer_size;
+		current_ea_pointer += current_transfer_size;
+	}
+	spu_mfcstat(MFC_TAG_UPDATE_ALL); /* Wait for Completion */
+}                                                                               
+</programlisting>
+</example>
+
+<para>
+Compile and run using the same commands as we used in the previous example:
+</para>
+
+<programlisting>
+spu-gcc convert_buffer_c.c convert_driver_c.c -o spe_convert
+embedspu -m64 convert_to_upper_handle spe_convert spe_convert_csf.o
+gcc -m64 spe_convert_csf.o ppu_dma_main.c -lspe -o dma_convert
+./dma_convert
+</programlisting>
+
+<para>
+So now we have just expanded the size of the data we can process to 4 gigabytes, though you could easily go beyond that by making the data size variables 64-bit instead of 32-bit. Notice that we don't explicitly code to ask the MFC to wait for our PUT to complete before we re-issue the GET.  This is because we are using barriers with our transfers, and we are using the same DMA tag for them.  This forces the transfers to be serialized by the MFC itself, so it will always wait until the current conversion is finished being PUT into system storage before GETting more data into the buffer.  Just remember to wait for the completion at the end (notice the <literal>spu_mfcstat</literal> outside the loop) or else your last bit of data may not finish transferring before it is used in the program!
+</para>
+
+<para>
+Another thing to be careful of when programming in C is to always make sure that you give function prototypes.  It is real easy to accidentally mix up 32-bit and 64-bit values.  On the PPE that isn't so bad, as the value is merely truncated or expanded.  But in the SPE, if the prototype is wrong, the preferred slot for 32-bit and 64-bit values are offset in such a way that conversion between the two must be handled explicitly.
+</para>
+</sect1>
+
+<sect1>
+<title>Helpful Tips for C Language SPE Programming</title>
+
+<para>
+Here are some tips to keep in mind when building SPE applications in C:
+</para>
+
+
+<itemizedlist>
+<listitem><para>Vectors <emphasis>can</emphasis> be cast between vectors of other types, and back-and-forth between the vector types and the special <literal>quad</literal> type, but <emphasis>none of these casts perform any data conversion</emphasis>.  If you need to convert between types, use an appropriate SPU intrinsic.</para></listitem>
+<listitem><para>Vector and non-vector pointers <emphasis>can</emphasis> be cast between each other, but when converting from a scalar pointer to a vector pointer <emphasis>it is the programmer's responsibility to be sure that the pointer is quadword-aligned</emphasis>.</para></listitem>
+<listitem><para>Declared vectors are always quadword-aligned when allocated.</para></listitem>
+<listitem><para>Remember that DMA transfers of 16 bytes or more <emphasis>must be in 16-byte multiples and aligned to 16-byte boundaries</emphasis> on both the SPE and the PPE.  Transfers smaller than that must be a power of two and be naturally aligned.  Optimal transfers are multiples of 128 bytes that are on 128-byte boundaries.</para></listitem>
+<listitem><para>If you are not sure about the alignment of data on the PPE, use <literal>memalign</literal> or <literal>posix_memalign</literal> to allocate an aligned pointer from the heap, and use <literal>memcpy</literal> or an equivalent to move the data to the aligned area.</para></listitem>
+<listitem><para>Always compile with <literal>-Wall</literal> and <emphasis>especially pay attention to missing prototype messages</emphasis>.  Incorrectly implied prototypes (especially between 32- and 64-bit types) can lead to bizarre error conditions.</para></listitem>
+<listitem><para>Always store effective addresses as <literal>unsigned long long</literal>s, on both the PPE and the SPE.  This way they can be treated in a unified fashion on the SPE and on the PPE, whether the PPE code is compiled for 32-bit or 64-bit execution.</para></listitem>
+<listitem><para>Avoid integer multiplies (especially 32-bit multiplies) on the SPE.  It takes five instructions to perform the multiply.  If you must multiply, cast to an <literal>unsigned short</literal> before multiplying.</para></listitem>
+<listitem><para>In scalar code on the SPE, declaring scalar values as vectors and vector pointers (even if you aren't using them as vectors) can speed up code because it doesn't have to do unaligned loads and stores.</para></listitem>
+<listitem><para>Be aware that on the SPE, <literal>float</literal>s and <literal>double</literal>s are implemented differently, and round differently as well.  <literal>float</literal>s in particular deviate from the C99 standard.  These will be covered further in the next article.</para></listitem>
+</itemizedlist>
+
+</sect1>
+
+<sect1>
+<title>Conclusion</title>
+<para>
+As you can see, the intrinsics available for C allow programmers to make the best mix of C and assembly language knowledge.  The SPU intrinsics allow programs to freely switch among high- and low-level code, but all within the semantic framework of the C language.
+</para>
+
+<para>
+In the next article, we will apply this knowledge into a real-world numerical application.
+</para>
+
+</sect1>
+
+<!--
+
+Resources 
+
+<ul>
+<li>The full set of intrinsics is documented in the <a href="http://www-306.ibm.com/chips/techlib/techlib.nsf/techdocs/30B3520C93F437AB87257060006FFE5E">PPU & SPU C/C++ Language Extension Specification</a>.</li>
+<li>For a complete list of available DMA commands on the MFC, see chapter 7 of the <a href="http://www-306.ibm.com/chips/techlib/techlib.nsf/techdocs/1AEEE1270EA2776387257060006E61BA">Cell BE Architecture Specification (1.01)</a> and pages 508-510 of the <a href="http://www-306.ibm.com/chips/techlib/techlib.nsf/techdocs/9F820A5FFA3ECE8C8725716A0062585F">Cell BE Programming Handbook (1.0)</a>.</li>
+<li>For more information on DMA list commands, see pages 51-62, 124-125, 129-130, and 157-158 of the <a href="http://www-306.ibm.com/chips/techlib/techlib.nsf/techdocs/1AEEE1270EA2776387257060006E61BA">Cell BE Architecture Specification (1.01)</a> and pages 73, 459-460, 509-510, and 527-530 of the <a href="http://www-306.ibm.com/chips/techlib/techlib.nsf/techdocs/9F820A5FFA3ECE8C8725716A0062585F">Cell BE Programming Handbook (1.0)</a>.</li>
+<li>The transfer class ID and replacement class ID fields for MFC operations is described on pages 78 and 114 of the <a href="http://www-306.ibm.com/chips/techlib/techlib.nsf/techdocs/1AEEE1270EA2776387257060006E61BA">Cell BE Architecture Specification (1.01)</a> and pages 155-158, 455-456, and 513-515 of the <a href="http://www-306.ibm.com/chips/techlib/techlib.nsf/techdocs/9F820A5FFA3ECE8C8725716A0062585F">Cell BE Programming Handbook (1.0)</a>.</li>
+</ul>
+
+-->
+
+</chapter>
